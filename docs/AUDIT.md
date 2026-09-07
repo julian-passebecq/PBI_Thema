@@ -2,15 +2,15 @@
 
 Audit date: 2026-09-07
 
-This audit checks the materialized standalone browser app, not the original Claude artifact container. The goal is to verify that Theme Forge can run from an ordinary static host such as Netlify without Claude, a backend, credentials, or a build step.
+This audit checks the materialized standalone browser app, not the original Claude artifact container. The objective is to verify that Theme Forge can run from an ordinary static host such as Netlify without Claude, a backend, credentials, or a build step.
 
 ## Result
 
-**Status: deployable as a static Netlify site.**
+**Status: deployable as a static Netlify site. Standalone Chromium smoke audit: PASS.**
 
-The repository now contains the real `theme-forge.html` source directly. The one-time reconstruction payload used while moving the artifact into GitHub has been removed.
+The repository contains the real `theme-forge.html` source directly. The temporary reconstruction payload used while moving the artifact into GitHub has been removed.
 
-A standalone compatibility pass added:
+The standalone compatibility pass added:
 
 - a normal viewport meta tag;
 - native browser downloads using `Blob`, `URL.createObjectURL()` and `<a download>`;
@@ -21,24 +21,24 @@ A standalone compatibility pass added:
 
 ## Runtime boundary
 
-Theme Forge is one browser document containing HTML, CSS and vanilla JavaScript. Runtime dependencies are deliberately small:
+Theme Forge is one browser document containing HTML, CSS and vanilla JavaScript.
 
 | Item | Required to use the app? | Notes |
 |---|---:|---|
 | Modern browser | Yes | Chrome/Edge/Firefox-class browser |
-| Netlify | No | Only one hosting option |
+| Netlify | No | Hosting option only |
 | Node.js | No | Test tooling only |
 | Python | No | Optional local static server only |
 | Claude | No | Artifact-specific integration is optional and guarded |
-| API key | No | None required for the standalone app |
+| API key | No | None required for standalone use |
 | Power BI/Fabric authentication | No | Theme Forge emits design intent; it does not call the service |
 | Backend/database | No | Browser-only state and JSON import/export |
 
 The Google Fonts stylesheet is optional; the UI falls back to system fonts if it cannot load.
 
-## Browser verification performed
+## Browser verification
 
-The standalone file was loaded in headless Chromium and exercised without `window.claude`.
+The standalone file was loaded in headless Chromium without `window.claude`.
 
 ### Contract / inventory checks
 
@@ -52,66 +52,54 @@ The standalone file was loaded in headless Chromium and exercised without `windo
 | Variants | 35 |
 | Typed formatting targets | 181 |
 | Story archetypes | 10 |
-| Object kinds | 21 |
+| Formatting-object applicability entries (`OBJ_KINDS`) | 37 |
 | Target-map controls | 44 |
 | Current sample spec validation issues | 0 |
+
+**Count clarification:** the original release handoff mentions “21 objects” in the `check5.js` navigation/test matrix. That is not the size of the `OBJ_KINDS` formatting-applicability registry; the actual v1.7 runtime registry contains 37 entries. The standalone test now checks the runtime value rather than reusing the unrelated release-test number.
 
 ### Standalone interaction checks
 
 Passed in Chromium:
 
 - application boots with no JavaScript page errors;
-- no Claude object is present;
+- no Claude object is required;
 - assistant surface reports standalone mode;
 - Edit layout activates;
 - Pages keyboard shortcut opens the dock;
-- visual tooling/dock can be opened;
 - native Theme download works;
 - native `dashboard-spec.json` download works;
 - native `export-target-map.json` download works.
 
 ### Responsive matrix
 
-The audit checked 1920, 1440, 1141, 1024, 768 and 420 px widths. An earlier migration verification also checked 2560 and 1280.
+The standalone audit checks 1920, 1440, 1141, 1024, 768 and 420 px widths. Migration verification also covered 2560 and 1280.
 
-At all checked widths:
+At the checked widths:
 
 - the document has no horizontal overflow;
 - the command bar has no horizontal scroll;
-- both tool rails remain available (below 700 px they become the designed horizontal strip);
+- both tool rails remain available; below 700 px they become the designed horizontal strip;
 - desktop widths keep the key `Edit layout` and `Fit` labels.
 
 Observed rail widths follow the v1.7 responsive design: 56 px at wide desktop, then 52/48/44 px as the viewport narrows, with the horizontal strip on phone-width layouts.
 
 ## Automated repository test
 
-`test/smoke.js` is a portable Playwright smoke/audit test. It asserts:
+`test/smoke.js` is a portable Playwright smoke/audit test. It asserts the contract counts above, current-spec validity, standalone browser-save support, target-map generation, standalone assistant status, all three JSON download paths, responsive no-overflow behavior, visible rails, Edit layout, the Pages shortcut, and absence of page errors.
 
-- the contract counts above;
-- that the current `SPEC` validates;
-- standalone browser-save support;
-- target-map generation;
-- the standalone assistant status;
-- all three JSON download paths;
-- responsive no-overflow behavior at six viewport sizes;
-- visible rails;
-- Edit layout and the Pages shortcut;
-- absence of page/console errors.
+`.github/workflows/test.yml` runs the audit in Chromium on pushes and pull requests. The standalone browser audit is passing in GitHub Actions after correcting three audit assumptions uncovered during migration: `SPEC_CONTRACT` versus theme `SCHEMA_VER`, object-shaped `VOCAB`, and the 37-entry `OBJ_KINDS` registry.
 
-`.github/workflows/test.yml` runs this audit in Chromium on pushes and pull requests.
-
-The original v1.7 artifact also shipped a much larger release suite (`spectest`, `uxtest17`, `paneltest`, `audit`, `check3`, `check5`). Those release results are useful evidence, but they are not being represented here as newly rerun unless they are separately ported into this repository. The repository smoke suite specifically verifies the standalone/Netlify migration boundary.
+The original v1.7 artifact also shipped the larger release suite (`spectest`, `uxtest17`, `paneltest`, `audit`, `check3`, `check5`). Those release results remain useful evidence, but this document does not claim that the entire original suite was newly rerun after migration. The repository smoke suite specifically verifies the standalone/Netlify boundary.
 
 ## Netlify configuration
 
-`netlify.toml` publishes the repository root directly. There is no build command and no environment variable requirement.
-
-Expected Netlify settings:
+`netlify.toml` publishes the repository root directly. There is no build command and no environment-variable requirement.
 
 | Setting | Value |
 |---|---|
 | Production branch | `main` |
-| Base directory | blank / repository root |
+| Base directory | repository root |
 | Build command | none |
 | Publish directory | `.` |
 | Functions directory | none |
@@ -150,10 +138,7 @@ The root route is internally rewritten to `/theme-forge.html` with HTTP 200, so 
 - container and chart overrides;
 - style presets;
 - conditional formatting rules evaluated against preview values;
-- filters;
-- slicer sync groups;
-- bookmarks;
-- button actions;
+- filters, slicer sync groups, bookmarks and button actions;
 - filter-pane preview;
 - five reality classes: ThemeDefault, PerVisual, Conditional, CanvasObject, CustomVisualOnly;
 - export target map for downstream cross-checking.
@@ -175,30 +160,30 @@ The root route is internally rewritten to `/theme-forge.html` with HTTP 200, so 
 - `export-target-map.json` download;
 - Copy Theme;
 - copyable AI prompt/brief;
-- PbiBench bridge is the intended downstream materialization boundary.
+- PbiBench bridge as the intended downstream materialization boundary.
 
 ## Findings / remaining risks
 
 ### 1. Single-file maintainability — medium
 
-The app is approximately 523 KB in one HTML file. This is excellent for portability, but increasingly expensive to review and maintain. The next architectural improvement should be a **source split using native ES modules**, while retaining a zero-build static distribution if desired. A framework migration is not required.
+The app is approximately 523 KB in one HTML file. This is excellent for portability but increasingly expensive to review and maintain. The next architecture improvement should be a source split using native ES modules while retaining a zero-build static distribution if desired. A framework migration is not required.
 
 ### 2. Content Security Policy — medium
 
-The app intentionally keeps inline CSS and JavaScript, so a strict CSP would require either hashes/nonces or splitting the source. The Netlify configuration therefore adds safe low-risk headers but does not pretend to provide a strict CSP. Splitting CSS/JS would make a strong CSP much easier later.
+The app intentionally keeps inline CSS and JavaScript, so a strict CSP would require hashes/nonces or splitting the source. The Netlify configuration adds safe low-risk headers but does not pretend to provide a strict CSP.
 
 ### 3. Assistant semantics — low
 
-On Netlify there is no real Claude runtime. The existing assistant surface falls back to built-in keyword restyling and now says so explicitly. If an actual AI assistant is added later, it should be implemented as a separate, explicit provider integration rather than silently depending on an artifact environment.
+On Netlify there is no Claude runtime. The existing assistant surface falls back to built-in keyword restyling and now says so explicitly. A future real AI assistant should be a separate provider integration rather than an implicit artifact dependency.
 
 ### 4. Browser-local persistence — expected
 
-Autosave/workspace state uses browser storage. It is intentionally not synchronized between devices or users. This is consistent with the current no-backend architecture.
+Autosave/workspace state uses browser storage. It is intentionally not synchronized between devices or users.
 
 ### 5. Full legacy release-suite portability — backlog
 
-The standalone smoke test covers the deployment boundary and high-value contract/UI paths. Porting the original full Playwright release suite into the repository would provide broader regression coverage and is a worthwhile follow-up, especially before large UI refactors.
+The standalone smoke test covers the deployment boundary and high-value contract/UI paths. Porting the original full Playwright release suite into the repository would provide broader regression coverage before large UI refactors.
 
 ## Recommendation
 
-Keep v1.7 as the stable static baseline. The immediate product is already useful as a **Power BI design-intent workbench** and is a good fit for Netlify. Do not rewrite it in React merely for hosting. The next engineering work should focus on regression-test portability and source modularization, not framework churn.
+Keep v1.7 as the stable static baseline. It is already a useful **Power BI design-intent workbench** and a good fit for Netlify. Do not rewrite it in React merely for hosting. Next engineering work should focus on full regression-suite portability and source modularization, not framework churn.
