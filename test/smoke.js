@@ -33,7 +33,8 @@ function assert(ok, message) {
   const contract = await page.evaluate(() => ({
     title: document.title,
     appVersion: document.querySelector('.ver')?.textContent?.trim(),
-    schemaVersion: typeof SCHEMA_VER === 'undefined' ? null : SCHEMA_VER,
+    specContract: typeof SPEC_CONTRACT === 'undefined' ? null : SPEC_CONTRACT,
+    themeSchema: typeof SCHEMA_VER === 'undefined' ? null : SCHEMA_VER,
     vocabulary: typeof VOCAB === 'undefined' ? null : VOCAB.length,
     families: typeof FAMILIES === 'undefined' ? null : FAMILIES.length,
     variants: typeof FAMILIES === 'undefined' ? null : FAMILIES.reduce((n, f) => n + f.variants.length, 0),
@@ -48,7 +49,8 @@ function assert(ok, message) {
   }));
 
   assert(contract.title === 'Power BI Theme Forge', `unexpected title: ${contract.title}`);
-  assert(contract.schemaVersion === 3, `dashboard-spec version is ${contract.schemaVersion}`);
+  assert(contract.specContract === 3, `dashboard-spec version is ${contract.specContract}`);
+  assert(contract.themeSchema === '2.156', `theme schema version is ${contract.themeSchema}`);
   assert(contract.vocabulary === 27, `visual vocabulary is ${contract.vocabulary}`);
   assert(contract.families === 11, `style family count is ${contract.families}`);
   assert(contract.variants === 35, `style variant count is ${contract.variants}`);
