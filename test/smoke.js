@@ -35,7 +35,7 @@ function assert(ok, message) {
     appVersion: document.querySelector('.ver')?.textContent?.trim(),
     specContract: typeof SPEC_CONTRACT === 'undefined' ? null : SPEC_CONTRACT,
     themeSchema: typeof SCHEMA_VER === 'undefined' ? null : SCHEMA_VER,
-    vocabulary: typeof VOCAB === 'undefined' ? null : VOCAB.length,
+    vocabulary: typeof VOCAB === 'undefined' ? null : Object.keys(VOCAB).length,
     families: typeof FAMILIES === 'undefined' ? null : FAMILIES.length,
     variants: typeof FAMILIES === 'undefined' ? null : FAMILIES.reduce((n, f) => n + f.variants.length, 0),
     formattingTargets: typeof FMT_TARGETS === 'undefined' ? null : FMT_TARGETS.length,
