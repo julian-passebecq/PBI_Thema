@@ -1,44 +1,78 @@
 # Power BI Theme Forge 1.7
 
-Theme Forge is a **static browser application** for producing Power BI design intent. It was originally developed as a Claude artifact, but **Claude is not part of the runtime**.
+Theme Forge is a **static browser workbench** for producing Power BI design intent. It started life as a Claude artifact, but the repository version is now a normal standalone web application.
 
-The app is one self-contained `theme-forge.html` file containing:
+**Runtime:** HTML + CSS + vanilla JavaScript · **no backend** · **no build step** · **no API key** · **no Claude runtime required**.
 
-- HTML for the workspace
-- CSS for the full UI and report preview
-- **vanilla JavaScript** for state, rendering, import/export, validation, editing, and interactions
-- an optional Google Fonts stylesheet; if it cannot load, system fonts are used
+**Contracts:** `dashboard-spec` v3 · Power BI report theme schema 2.156.
 
-There is **no React, Vue, Node server, backend, API key, Claude SDK, or build step** required to run the application.
+## Deploy on Netlify
 
-**Contract:** `dashboard-spec` **v3** · Power BI report theme schema **2.156**
+This repository is already configured for a zero-build Netlify deployment with `netlify.toml`.
 
-## Run it
+1. In Netlify, choose **Add new project → Import an existing project**.
+2. Select GitHub and `julian-passebecq/PBI_Thema`.
+3. Use branch **`main`**.
+4. Leave the build command empty.
+5. Publish directory is **`.`** (the repository root).
+6. No environment variables are required.
+7. Deploy.
 
-### Simplest: open the file
+Netlify reads `netlify.toml`, publishes the root, and internally rewrites `/` to `/theme-forge.html`. There is no Node process after deployment.
 
-Double-click `theme-forge.html` (or `index.html`). The browser runs the embedded JavaScript directly from `file://`.
+## Run locally
 
-### Optional: serve it locally
+The simplest option is to open `theme-forge.html` directly in a browser.
 
-A local HTTP server is useful when you want a normal `http://localhost` URL:
+For a normal localhost URL:
 
 ```bash
-# Python
 python -m http.server 8000
-
-# then open http://localhost:8000/
 ```
 
-No Python code is used by Theme Forge itself; Python is only acting as a tiny static file server.
+Then open `http://localhost:8000/`.
 
-### GitHub Pages / Netlify
+Python is only serving static files; Theme Forge itself is JavaScript running in the browser.
 
-This repository includes `index.html`, which redirects to `theme-forge.html`, so the repository can be published as a static site without changing the app. For GitHub Pages, publish the repository root from `main`. Netlify can also deploy the repository root with no build command.
+## What the standalone migration fixed
 
-## What needs Node.js?
+The original artifact already contained the application logic, but one runtime detail was Claude-specific: JSON export used the artifact download service. The standalone version now uses the browser's own `Blob` + `<a download>` path when Claude is absent.
 
-Only the **automated Playwright test suite**. The app itself does not need Node.js.
+That means these work normally from Netlify:
+
+- Download Power BI `theme.json`
+- Export `dashboard-spec.json`
+- Export `export-target-map.json`
+- Copy theme / JSON
+- Import model/spec/theme JSON
+- localStorage workspace persistence
+
+The optional Assistant surface also reports **Standalone mode** instead of implying that Claude is available. Its local keyword-restyle fallback remains usable without an AI provider.
+
+## Core features
+
+- **11 style families / 35 variants** with full report restyling.
+- **27-kind visual vocabulary** with honest preview substitutions for intent-only kinds.
+- `dashboard-spec` v3 page/layout authoring.
+- Model metadata import and broken-field validation.
+- In-place visual type changes while preserving compatible bindings.
+- Add, drag, resize, multi-select, align/distribute, snapping and grid support.
+- Typed filters, sync groups, bookmarks and button actions.
+- **181 typed formatting targets**, per-visual overrides, presets and conditional formatting intent.
+- Filter pane and bookmark preview.
+- Detail levels 1/2/3 that change visibility only, not exported state.
+- Alt text workflow and coverage count.
+- Undo/redo and autosave.
+- Spec diff and side-by-side JSON workspace.
+- PbiBench export-target diagnostics and five Power BI reality classes.
+- **107-icon library** with Image URL/DAX helper.
+- WCAG-oriented structural contrast normalization.
+
+See [`docs/AUDIT.md`](docs/AUDIT.md) for the standalone audit, responsive matrix, feature inventory and remaining engineering risks.
+
+## Test it
+
+Node.js is required **only for the automated test tooling**:
 
 ```bash
 npm install
@@ -46,56 +80,31 @@ npx playwright install chromium
 npm test
 ```
 
-The tests are repository-relative; the Claude-only path `/home/claude/theme-forge.html` has been removed.
+`test/smoke.js` launches the standalone file in Chromium and verifies the important migration boundary: contracts, JSON downloads, current spec validation, responsive behavior, rails/toolbars, edit mode, keyboard navigation and browser errors.
+
+GitHub Actions runs the same smoke audit on pushes and pull requests.
 
 ## Repository layout
 
 ```text
 .
-├── index.html                         static-host entry point
-├── theme-forge.html                   the complete application
-├── README.md                          run/development instructions
-├── HANDOFF.md                         architecture and feature handoff
+├── theme-forge.html               complete standalone application
+├── index.html                     generic static-host entry point
+├── netlify.toml                   Netlify publish/rewrite/headers config
+├── README.md
 ├── docs/
-│   ├── pbibench-bridge-contract.md
-│   ├── release-notes-v1.1.md ... v1.7.md
-│   ├── theme-forge-handbook.md
-│   ├── theme-forge-v1.0-handbook.md
-│   └── theme-forge-business-case.md
-├── samples/
-│   ├── pbibench-model-context.json
-│   ├── dashboard-spec.json
-│   ├── dashboard-spec-v1.json
-│   ├── ai-prompt-example.txt
-│   ├── export-target-map.json
-│   ├── theme-editorial-red.json
-│   └── vocabulary.json
-├── screenshots/
-│   └── workspace-1141.png             representative v1.7 responsive proof
+│   └── AUDIT.md                   standalone audit + feature inventory
 ├── test/
-│   ├── spectest.js
-│   ├── uxtest17.js
-│   ├── paneltest.js
-│   ├── audit.js
-│   ├── check3.js
-│   └── check5.js
-└── .github/workflows/test.yml
+│   └── smoke.js                   portable Chromium smoke audit
+├── package.json                   test dependencies only
+├── scripts/
+│   └── standalone_patch.py        migration/provenance helper, not runtime
+└── .github/workflows/
+    └── test.yml                    CI browser audit
 ```
-
-The original artifact contained a large screenshot set. The repository keeps one representative 1141 px screenshot; the screenshots are not runtime assets and are not needed by the tests.
-
-## Two-minute tour
-
-1. Open `theme-forge.html`. It boots with a built-in sample model and a one-page spec.
-2. Use **Edit layout**, **+ Add visual**, **Arrange**, **Fit**, **Filter pane**, and **Detail 1/2/3** from the command bar.
-3. Pick a **Family** and **Variant** under the canvas for a full restyle.
-4. Use the left rail for Pages / Visuals / Themes / Model / Library / Gallery / Icons.
-5. Use the right rail for Visual / Data / Format / Filters / Interactions / Accessibility / JSON.
-6. Import `samples/pbibench-model-context.json` to bind the preview to a model shape.
-7. Export `dashboard-spec.json`, `theme.json`, and the diagnostic target map.
 
 ## Architecture boundary
 
-Theme Forge never authenticates, never calls the Power BI/Fabric API, never writes PBIR, and never stores credentials. It reads/imports JSON and emits design-intent JSON. PbiBench is the downstream materializer described in `docs/pbibench-bridge-contract.md`.
+Theme Forge intentionally does **not** authenticate to Power BI/Fabric, call their REST APIs, write PBIR, or store credentials. It produces design-intent JSON and theme JSON. PbiBench is the intended downstream materializer.
 
-See `HANDOFF.md` for the complete architecture and `docs/release-notes-v1.7.md` for the responsive-workspace changes.
+The current single-file distribution is useful for portability. If the codebase grows substantially, the next architecture step should be to split source into native ES modules while keeping the deployed output static; a React rewrite is not required just to make this maintainable or deployable.
