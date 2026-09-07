@@ -40,7 +40,7 @@ function assert(ok, message) {
     variants: typeof FAMILIES === 'undefined' ? null : FAMILIES.reduce((n, f) => n + f.variants.length, 0),
     formattingTargets: typeof FMT_TARGETS === 'undefined' ? null : FMT_TARGETS.length,
     stories: typeof STORIES === 'undefined' ? null : STORIES.length,
-    objects: typeof OBJ_KINDS === 'undefined' ? null : Object.keys(OBJ_KINDS).length,
+    formattingObjects: typeof OBJ_KINDS === 'undefined' ? null : Object.keys(OBJ_KINDS).length,
     specIssues: typeof validateSpec === 'undefined' ? ['validator missing'] : validateSpec(SPEC),
     nativeSave: typeof browserSave === 'function' && typeof saveText === 'function',
     assistantStatus: document.querySelector('#aiStatus')?.textContent?.trim() || '',
@@ -56,7 +56,7 @@ function assert(ok, message) {
   assert(contract.variants === 35, `style variant count is ${contract.variants}`);
   assert(contract.formattingTargets === 181, `formatting target count is ${contract.formattingTargets}`);
   assert(contract.stories === 10, `story count is ${contract.stories}`);
-  assert(contract.objects === 21, `object-kind count is ${contract.objects}`);
+  assert(contract.formattingObjects === 37, `formatting-object applicability count is ${contract.formattingObjects}`);
   assert(contract.specIssues.length === 0, `current spec is invalid: ${contract.specIssues.join('; ')}`);
   assert(contract.nativeSave, 'native browser download fallback is missing');
   assert(contract.targetControls === 44, `target-map control count is ${contract.targetControls}`);
