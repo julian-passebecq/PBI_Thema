@@ -1,0 +1,12 @@
+{
+  "name": "power-bi-theme-forge",
+  "version": "1.7.0",
+  "private": true,
+  "description": "Standalone browser workbench for Power BI theme and dashboard design intent",
+  "scripts": {
+    "test": "node test/smoke.js"
+  },
+  "devDependencies": {
+    "playwright": "^1.55.0"
+  }
+}
