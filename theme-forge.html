@@ -211,6 +211,18 @@ body.resizing{cursor:row-resize;user-select:none}
 .rulerow{display:flex;gap:5px;align-items:center;margin-bottom:5px}
 .rulerow select{flex:1 1 auto;min-width:0;max-width:none}
 .rulerow input[type=number]{width:64px;max-width:none}
+.fmtrule input[type=color]{min-width:32px}
+.fmtrule .x{min-width:28px}
+.rulerow.fmtrule{flex-wrap:wrap}
+.rulerow.fmtrule select{flex:1 0 100px;min-width:100px}
+.rulerow.fmtrule input[type=text],.rulerow.fmtrule input[type=number]{flex:1 1 110px;min-width:80px;max-width:none}
+@media(max-width:600px){
+  .rulerow.fmtrule{flex-wrap:wrap}
+  .rulerow.fmtrule select{flex-basis:100%;width:100%}
+  .rulerow.fmtrule input{flex:1 1 110px;min-width:0;max-width:none}
+  .rulerow.fmtrule input[type=color]{flex:0 0 40px;width:40px;min-width:40px}
+  .rulerow.fmtrule .x{flex:0 0 28px}
+}
 .rulerow .lo{font-size:10.5px;color:var(--ink-3);width:26px}
 .valchips{display:flex;flex-wrap:wrap;gap:4px;margin:2px 0 4px}
 .vchip2{border:1px solid var(--line);background:var(--panel-2);border-radius:20px;padding:2px 9px;
@@ -639,13 +651,27 @@ select,input[type=text]{background:var(--panel-2);border:1px solid var(--line);b
   .lrail{order:-1}
   .rbtn[aria-pressed="true"]::after,.rbtn[aria-selected="true"]::after{
        top:auto;bottom:-4px;left:7px;right:7px;width:auto;height:3px}
-  .dock{height:auto;max-height:none}
+  .dock{height:auto;max-height:none;min-width:0}
+  .dockhead{flex-wrap:wrap;height:auto;min-height:34px;padding:6px;gap:6px;min-width:0}
+  .dockhead #findCtl{width:120px;min-width:0;flex:1 1 100px}
+  .dockhead .grow{display:none}
+  .dockhead #dockClose{margin-left:auto;flex-shrink:0}
+  .dockhead .dsub,.dockhead .dcrumb{max-width:100%}
   .dockbody .pane[data-pane="design"][data-open="1"],
   .dockbody #bindPanel,.dockbody #objPanel{grid-template-columns:1fr}
   .bank{border-right:0;border-top:1px solid var(--line)}
   .insp{border-left:0;border-top:1px solid var(--line)}
   #jsonarea{height:340px}
 }
+/* Document decisions remain reachable on narrow screens. */
+.document-dialog{box-sizing:border-box;width:min(620px,calc(100vw - 32px));max-height:85vh;overflow:auto;border:1px solid #aaa;border-radius:12px;padding:20px;color:#20242b;background:#fff;font:14px/1.5 system-ui;overflow-wrap:anywhere}
+.document-dialog::backdrop{background:#0008}
+.document-dialog h2{font-size:20px;margin:0 0 12px}
+.document-dialog ul{max-height:36vh;overflow:auto;padding-left:22px}
+.document-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px}
+.document-actions button{padding:10px 14px;white-space:normal;cursor:pointer}
+.recovery-notice{position:fixed;z-index:9000;bottom:12px;left:12px;box-sizing:border-box;width:min(520px,calc(100vw - 24px));max-height:70vh;overflow:auto;padding:16px;background:#fff4d6;color:#302410;border:1px solid #9d741c;box-shadow:0 4px 20px #0003;font:14px/1.4 system-ui}
+#jsonState{max-width:100%;white-space:normal;overflow-wrap:anywhere}
 </style>
 
 <div class="app" id="app" data-lv="2" data-dock="0" data-focus="0" data-tool="" data-jsonfull="0">
@@ -658,6 +684,7 @@ select,input[type=text]{background:var(--panel-2);border:1px solid var(--line);b
     </div>
     <button class="chip" id="btnCopy" title="Copy theme.json to the clipboard">Copy theme</button>
     <button class="chip solid" id="btnDownload">Download theme.json</button>
+    <span id="saveStatus" role="status" hidden title="Download your theme and spec to keep your changes.">Autosave unavailable</span>
   </header>
 
   <div class="toolbar" id="toolbar" role="toolbar" aria-label="Canvas commands" data-pack="0">
@@ -1475,6 +1502,17 @@ function themePresets(s){
 /* every preset name a spec can resolve against right now */
 const knownPresets=()=>[...new Set([...THEME_PRESET_NAMES,...((S&&S.presets)||[])])];
 function buildThemeJson(s){
+  const theme=buildGeneratedThemeJson(s);
+  // Named styles imported from Power BI are complete definitions, not just labels.
+  for(const [kind,styles] of Object.entries(s.importedPresets||{})){
+    const target=Object.hasOwn(theme.visualStyles,kind)?theme.visualStyles[kind]
+      :(Object.defineProperty(theme.visualStyles,kind,{value:{},enumerable:true,configurable:true,writable:true}),theme.visualStyles[kind]);
+    for(const [name,definition] of Object.entries(styles))
+      Object.defineProperty(target,name,{value:structuredClone(definition),enumerable:true,configurable:true,writable:true});
+  }
+  return theme;
+}
+function buildGeneratedThemeJson(s){
   const font=s.font, semi=(font==='Segoe UI'?'Segoe UI Semibold':font);
   const lbl=Math.max(8,s.sLabel), legendOn=s.legendMode==='top'||s.legendMode==='chips';
   const gs=s.gridStyle==='dotted'?'dotted':(s.gridStyle==='dashed'?'dashed':'solid');
@@ -1582,13 +1620,17 @@ function unwrap(v){
   if(v.color)return unwrap(v.color);
   return null;
 }
-function parseThemeJson(txt){
-  const t=JSON.parse(txt), s=structuredClone(S), g=(v,f)=>hx(v)||f;
+function parseThemeJson(txt,base=S){
+  const t=JSON.parse(txt), s=structuredClone(base), g=(v,f)=>hx(v)||f;
+  if(!t||typeof t!=='object'||Array.isArray(t))throw new Error('A theme must be a JSON object.');
   s.srcSchema=schemaVerOf(t.$schema);
   /* a theme may declare named style presets beside "*"; collect them so a spec can name one */
   const pre=new Set();
   Object.values(t.visualStyles||{}).forEach(v=>Object.keys(v||{}).forEach(k=>{if(k!=='*')pre.add(k);}));
   s.presets=[...pre];
+  s.importedPresets=Object.fromEntries(Object.entries(t.visualStyles||{}).map(([kind,styles])=>[
+    kind,Object.fromEntries(Object.entries(styles||{}).filter(([name])=>name!=='*'))
+  ]).filter(([,styles])=>Object.keys(styles).length));
   if(typeof t.name==='string')s.name=t.name;
   if(Array.isArray(t.dataColors)){
     const d=t.dataColors.map(hx).filter(Boolean);
@@ -3291,7 +3333,7 @@ function filterLabel(f){
   switch(f.type){
     case 'categorical':return `${n} ${CAT_OPS[f.operator]||'is one of'} ${(f.values||[]).slice(0,3).join(', ')}${(f.values||[]).length>3?` +${f.values.length-3}`:''}`;
     case 'range':return `${n} between ${f.min==null?'…':f.min} and ${f.max==null?'…':f.max}`;
-    case 'relativeDate':return `${n} ${f.direction||'last'} ${f.amount==null?'':f.amount} ${f.unit||'months'}`;
+    case 'relativeDate':return `${n} ${f.direction||'last'} ${editorValue(f.amount==null?'':f.amount)} ${f.unit||'months'}`;
     case 'topN':return `${f.direction||'top'} ${f.count||10} ${n} by ${f.orderBy?f.orderBy.name:'…'}`;
     case 'advanced':return `${n} ${(f.conditions||[]).map(c=>`${COND_OPS[c.operator]||c.operator}${c.value!=null?' '+c.value:''}`).join(` ${f.combine||'and'} `)}`;
     default:return n;
@@ -3429,9 +3471,194 @@ function defaultSpec(){
           rules:[{operator:'lt',value:0,result:{type:'color',value:'#C62828'}}]}]}}]}]};
 }
 
+/* DOCUMENT CONTRACTS BEGIN — pure input checks; unknown extensions stay inert. */
+const INPUT_LIMIT=4*1024*1024;
+const record=x=>x!==null&&typeof x==='object'&&!Array.isArray(x);
+const issue=(code,path,msg,blocking=true)=>({code,path,where:path,msg,blocking,level:blocking?'error':'warn'});
+function inputData(input,kind){
+  try{
+    const text=typeof input==='string'?input:JSON.stringify(input);
+    if(typeof text!=='string')throw Error('Expected JSON data.');
+    if(new TextEncoder().encode(text).length>INPUT_LIMIT)return {issues:[issue('limit.bytes',kind,'Input exceeds 4 MiB UTF-8.')]};
+    const candidate=JSON.parse(text), issues=[];
+    const walk=(x,p,d)=>{
+      if(d>64){issues.push(issue('limit.depth',p,'Input exceeds depth 64.'));return;}
+      if(x&&typeof x==='object')for(const [k,v] of Object.entries(x)){walk(v,p+'.'+k,d+1);if(issues.length)break;}
+    };
+    walk(candidate,kind,0);
+    return {candidate,issues};
+  }catch{return {issues:[issue('syntax',kind,'JSON error — input must be valid JSON.')]};}
+}
+function shapeIssues(j,kind){
+  const out=[];
+  const bad=(p,m,c='shape')=>out.push(issue(c,p,m));
+  const obj=(x,p)=>{if(!record(x)){bad(p,'Must be an object.');return false;}return true;};
+  const str=(x,p)=>{if(typeof x!=='string'||!x.trim())bad(p,'Must be a nonempty string.','type.string');};
+  const num=(x,p)=>{if(typeof x!=='number'||!Number.isFinite(x))bad(p,'Must be a finite number.','type.number');};
+  const opt=(o,k,p,f)=>{if(Object.hasOwn(o,k))f(o[k],p+'.'+k);};
+  const list=(x,p,f)=>{if(!Array.isArray(x)){bad(p,'Must be an array.');return;}x.forEach((v,i)=>{if(obj(v,p+'['+i+']'))f(v,p+'['+i+']');});};
+  const identityKeys=new Set(['id','name','kind','modelName','pageId','bookmarkId','fromTable','fromColumn','toTable','toColumn']);
+  const names=(o,p,keys)=>keys.forEach(k=>opt(o,k,p,(v,q)=>{
+    if(identityKeys.has(k))str(v,q);
+    else if(typeof v!=='string')bad(q,'Must be a string.','type.string');
+  }));
+  const ids=(xs,p)=>{const seen=new Set();(xs||[]).forEach((x,i)=>{if(!record(x)||x.id===undefined)return;str(x.id,p+'['+i+'].id');if(seen.has(x.id))bad(p+'['+i+'].id','Duplicate identity.','identity.duplicate');seen.add(x.id);});};
+  const field=(x,p)=>{if(x===null)return; if(obj(x,p))['kind','table','name'].forEach(k=>str(x[k],p+'.'+k));};
+  const filters=(xs,p)=>{list(xs,p,(f,q)=>{
+    names(f,q,['id','type','operator','direction','unit','combine']);
+    ['field','orderBy'].forEach(k=>opt(f,k,q,field));
+    ['min','max','amount','count'].forEach(k=>{if(f[k]!=null)num(f[k],q+'.'+k);});
+    if('values' in f&&(!Array.isArray(f.values)||f.values.some(v=>v!==null&&!['string','number','boolean'].includes(typeof v))))bad(q+'.values','Must be an array of scalar values.');
+    opt(f,'conditions',q,(v,r)=>list(v,r,(c,s)=>names(c,s,['operator'])));
+  });if(Array.isArray(xs))ids(xs,p);};
+  const formatting=(x,p)=>{if(!obj(x,p))return;names(x,p,['stylePreset']);
+    ['overrides','conditional'].forEach(k=>opt(x,k,p,(v,q)=>{
+      list(v,q,(o,r)=>{names(o,r,['id','mode']);
+        opt(o,'target',r,(t,s)=>{if(obj(t,s))names(t,s,['layer','object','property']);});
+        ['field','basedOn'].forEach(k=>opt(o,k,r,field));
+        opt(o,'value',r,obj);
+        opt(o,'gradient',r,(g,s)=>{if(obj(g,s))['min','max','center'].forEach(k=>opt(g,k,s,(end,t)=>{
+          if(obj(end,t)&&end.value!=null)num(end.value,t+'.value');
+        }));});
+        opt(o,'rules',r,(rs,s)=>list(rs,s,(rule,t)=>{
+          names(rule,t,['operator']);opt(rule,'result',t,obj);
+          // Rule thresholds support literal strings as well as numbers. Gradient endpoints do not.
+          ['value','value2'].forEach(k=>opt(rule,k,t,(v,q)=>{
+            if(typeof v!=='string'&&(typeof v!=='number'||!Number.isFinite(v)))bad(q,'Must be a string or finite number.','type.threshold');
+          }));
+        }));
+      });if(Array.isArray(v))ids(v,q);
+    }));
+  };
+  if(!obj(j,kind))return out;
+  if(kind==='spec'){
+    if(Object.hasOwn(j,'contractVersion')&&(!Number.isInteger(j.contractVersion)||j.contractVersion<1||j.contractVersion>3))bad('spec.contractVersion','Supported spec versions are integers 1, 2 and 3; missing legacy version is allowed.','version');
+    opt(j,'report','spec',(r,p)=>{if(obj(r,p))names(r,p,['title','audience']);});
+    opt(j,'canvas','spec',(v,p)=>{if(obj(v,p))['width','height'].forEach(k=>opt(v,k,p,num));});
+    opt(j,'filters','spec',filters);
+    opt(j,'bookmarks','spec',(xs,p)=>{list(xs,p,(b,q)=>{
+      str(b.id,q+'.id');
+      names(b,q,['id','pageId']);
+      opt(b,'name',q,(v,p)=>{if(typeof v!=='string')bad(p,'Must be a string.','type.string');});
+      opt(b,'captures',q,obj);opt(b,'filters',q,filters);
+      opt(b,'hiddenVisualIds',q,(v,r)=>{if(!Array.isArray(v))bad(r,'Must be an array.');else v.forEach((id,i)=>str(id,r+'['+i+']'));});
+    });if(Array.isArray(xs))ids(xs,p);});
+    if(!Array.isArray(j.pages)||!j.pages.length){bad('spec.pages','Needs a nonempty pages array.');return out;}
+    if(j.pages.length>40){bad('spec.pages','At most 40 pages.','limit.pages');return out;}
+    let total=0;const visuals=[];
+    list(j.pages,'spec.pages',(pg,p)=>{
+      names(pg,p,['id','title','archetype','purpose','storyId']);
+      opt(pg,'canvas',p,(v,q)=>{if(obj(v,q))['width','height'].forEach(k=>opt(v,k,q,num));});
+      opt(pg,'formatting',p,formatting);opt(pg,'filters',p,filters);
+      if(pg.visuals===undefined)return;
+      if(Array.isArray(pg.visuals))total+=pg.visuals.length;
+      if(total>400)return;
+      if(Array.isArray(pg.visuals))visuals.push(...pg.visuals);
+      list(pg.visuals,p+'.visuals',(v,q)=>{
+        str(v.kind,q+'.kind');
+        names(v,q,['id','kind','title','purpose','interaction','note','altText','objectClass','previewKind','syncGroup']);
+        opt(v,'position',q,(pos,r)=>{if(obj(pos,r))['x','y','width','height'].forEach(k=>opt(pos,k,r,num));});
+        opt(v,'bindings',q,(bs,r)=>{if(obj(bs,r))Object.entries(bs).forEach(([k,b])=>{if(Array.isArray(b))b.forEach((f,i)=>field(f,r+'.'+k+'['+i+']'));else field(b,r+'.'+k);});});
+        opt(v,'sort',q,(s,r)=>{if(obj(s,r)){opt(s,'by',r,field);names(s,r,['dir']);}});
+        opt(v,'action',q,(a,r)=>{if(obj(a,r))names(a,r,['type','pageId','bookmarkId','url']);});
+        opt(v,'filters',q,filters);opt(v,'formatting',q,formatting);
+      });
+    });
+    if(total>400)bad('spec.pages','At most 400 visuals.','limit.visuals');
+    ids(j.pages,'spec.pages');ids(visuals,'spec.visuals');
+  }else if(kind==='model'){
+    if(Object.hasOwn(j,'contractVersion')&&j.contractVersion!==1)bad('model.contractVersion','Supported model version is 1.','version');
+    names(j,'model',['modelName','modelFingerprint']);
+    if(!Array.isArray(j.tables)||!j.tables.length){bad('model.tables','Needs a nonempty tables array.');return out;}
+    let count=0;const tables=new Set();
+    list(j.tables,'model.tables',(t,p)=>{
+      str(t.name,p+'.name');if(tables.has(t.name))bad(p+'.name','Duplicate table name.','identity.duplicate');tables.add(t.name);
+      const fields=new Set();
+      ['columns','measures'].forEach(k=>opt(t,k,p,(v,q)=>{
+        if(Array.isArray(v))count+=v.length;
+        if(count>4000)return;
+        list(v,q,(f,r)=>{str(f.name,r+'.name');if(fields.has(f.name))bad(r+'.name','Duplicate field name.','identity.duplicate');fields.add(f.name);
+          names(f,r,['dataType','expression','formatString','description']);
+          opt(f,'sampleValues',r,(vs,s)=>{if(!Array.isArray(vs)||vs.some(x=>x!==null&&!['string','number','boolean'].includes(typeof x)))bad(s,'Must be an array of scalar values.');});
+        });
+      }));
+    });
+    if(count>4000)bad('model.tables','At most 4,000 fields.','limit.fields');
+    if(!count)bad('model.tables','Needs at least one field.');
+    opt(j,'relationships','model',(xs,p)=>list(xs,p,(r,q)=>{
+      names(r,q,['name','fromTable','fromColumn','toTable','toColumn','cardinality','crossFilteringBehavior']);
+      if(!Object.hasOwn(r,'from')&&!Object.hasOwn(r,'to'))['fromTable','fromColumn','toTable','toColumn'].forEach(k=>str(r[k],q+'.'+k));
+      else ['from','to'].forEach(k=>{if(obj(r[k],q+'.'+k))['table','column'].forEach(n=>str(r[k][n],q+'.'+k+'.'+n));});
+      ['from','to'].forEach(k=>opt(r,k,q,(f,s)=>{if(obj(f,s))names(f,s,['table','column']);}));
+    }));
+  }else if(kind==='theme'){
+    names(j,'theme',['name','$schema']);
+    ['foreground','foregroundNeutralSecondary','background','secondaryBackground','tableAccent','null','firstLevelElements','secondLevelElements','thirdLevelElements','fourthLevelElements','good','neutral','bad','maximum','center','minimum'].forEach(k=>opt(j,k,'theme',(v,p)=>{if(typeof v!=='string'||!hx(v))bad(p,'Must be a supported color string.');}));
+    opt(j,'dataColors','theme',(v,p)=>{if(!Array.isArray(v)||!v.length||v.some(c=>typeof c!=='string'||!hx(c)))bad(p,'Must be a nonempty array of color strings.');});
+    opt(j,'textClasses','theme',(x,p)=>{if(obj(x,p))Object.entries(x).forEach(([k,v])=>{const q=p+'.'+k;if(obj(v,q)){names(v,q,['fontFace','color']);opt(v,'fontSize',q,num);}});});
+    opt(j,'visualStyles','theme',(vs,p)=>{if(obj(vs,p))Object.entries(vs).forEach(([kind,styles])=>{
+      const q=p+'.'+kind;if(obj(styles,q))Object.entries(styles).forEach(([name,def])=>{
+        const r=q+'.'+name;if(obj(def,r))Object.entries(def).forEach(([property,values])=>{
+          list(values,r+'.'+property,(v,s)=>{
+            ['show','showMarker','gridlineShow'].forEach(k=>opt(v,k,s,(x,t)=>{if(typeof x!=='boolean')bad(t,'Must be a boolean.');}));
+            ['radius','top','fontSize','strokeWidth'].forEach(k=>opt(v,k,s,num));
+          });
+        });
+      });
+    });});
+  }
+  return out;
+}
+function scrubCandidate(x,issues,path){
+  if(Array.isArray(x))return x.map((v,i)=>scrubCandidate(v,issues,path+'['+i+']'));
+  if(!record(x))return x;
+  return Object.fromEntries(Object.entries(x).filter(([k])=>{
+    if(/(password|passwd|pwd|secret|token|connectionstring|clientsecret|apikey|api_key|credential|sastoken|accountkey|bearer)/i.test(k)){
+      issues.push(issue('cleanup.credential',path+'.'+k,'Removed credential-looking property (value withheld).',false));return false;
+    }return true;
+  }).map(([k,v])=>[k,scrubCandidate(v,issues,path+'.'+k)]));
+}
+function prepareDocument(input,kind){
+  const r=inputData(input,kind);if(r.issues.length)return {...r,status:'rejected'};
+  r.issues=shapeIssues(r.candidate,kind);
+  if(r.issues.length)return {...r,status:'rejected'};
+  if(kind!=='theme')r.candidate=scrubCandidate(r.candidate,r.issues,kind);
+  if(kind==='spec'){
+    const m=migrateSpec(r.candidate);r.candidate=m.spec;
+    r.issues.push(...m.notes.map(msg=>issue('migration.version','spec.contractVersion',msg,false)));
+    const used=new Set(r.candidate.pages.flatMap(p=>[p.id,...(p.visuals||[]).map(v=>v.id)]).filter(Boolean));
+    const ensure=(o,p,base)=>{if(o.id!==undefined)return;let id=base,n=1;while(used.has(id))id=base+'-'+n++;o.id=id;used.add(id);r.issues.push(issue('migration.id',p+'.id','Generated stable identity '+id+'.',false));};
+    r.candidate.pages.forEach((p,i)=>{ensure(p,'spec.pages['+i+']','page-'+(i+1));
+      p.visuals??=[];p.canvas??={width:1280,height:720};
+      p.visuals.forEach((v,k)=>{ensure(v,'spec.pages['+i+'].visuals['+k+']','visual-'+(i+1)+'-'+(k+1));v.position??={};});
+    });
+  }
+  const after=shapeIssues(r.candidate,kind);r.issues.push(...after);
+  return {...r,status:after.length?'rejected':'ready'};
+}
+function suppliedChanges(source,output,path='theme',out=[]){
+  if(Array.isArray(source)&&Array.isArray(output)&&source.length===output.length){
+    source.forEach((v,i)=>suppliedChanges(v,output[i],path+'['+i+']',out));
+  }else if(record(source)&&record(output)){
+    for(const [k,v] of Object.entries(source)){
+      if(!Object.hasOwn(output,k))out.push({path:path+'.'+k,kind:'dropped'});
+      else suppliedChanges(v,output[k],path+'.'+k,out);
+    }
+  }else if(JSON.stringify(source)!==JSON.stringify(output)){
+    const scalar=v=>v===null||typeof v==='boolean'||typeof v==='number'||(typeof v==='string'&&/^#[0-9a-f]{3,8}$/i.test(v));
+    const sensitive=/(password|passwd|pwd|secret|token|connectionstring|apikey|api_key|credential|bearer)/i.test(path);
+    const detail=sensitive?'value withheld':Array.isArray(source)&&Array.isArray(output)?source.length+' items → '+output.length+' items':
+      scalar(source)&&scalar(output)?String(source)+' → '+String(output):'supplied value differs from supported output';
+    out.push({path,kind:'changed',detail});
+  }
+  return out;
+}
+/* DOCUMENT CONTRACTS END */
+
 /* ---- contract migration: a v1 file is read, upgraded and reported ---- */
 function migrateSpec(j){
   const notes=[];
+  j=structuredClone(j);
   if(!j||typeof j!=='object')return {spec:j,notes};
   const from=j.contractVersion;
   if(from===SPEC_CONTRACT)return {spec:j,notes};
@@ -3540,6 +3767,13 @@ function validateFormatting(f,add,where,scope,kind){
 
 /* ---- validation ---- */
 function validateSpec(spec,quiet){
+  const blocking=shapeIssues(spec,'spec');
+  if(blocking.length){if(!quiet)specIssues=blocking;return blocking;}
+  const out=validateSpecContent(spec,true).map(i=>({...i,code:'intent',path:i.where,blocking:false}));
+  if(!quiet)specIssues=out;
+  return out;
+}
+function validateSpecContent(spec,quiet){
   const out=[];
   const add=(level,where,msg)=>out.push({level,where,msg});
   if(!spec||typeof spec!=='object'){add('error','spec','not an object');return out;}
@@ -3554,7 +3788,7 @@ function validateSpec(spec,quiet){
   if(!Array.isArray(spec.pages)||!spec.pages.length){add('error','pages','no pages');return out;}
   validateFilters(spec.filters,add,'report filters','report');
   validateBookmarks(spec,add);
-  const syncGroups={};
+  const syncGroups=Object.create(null);
   const pageIds=new Set(),visIds=new Set();
   spec.pages.forEach((pg,pi)=>{
     const where=`page ${pi+1}`;
@@ -3748,10 +3982,15 @@ function unsupported(v,pos){
 }
 
 /* read a declared override, if the spec carries one */
+function previewValue(target,typed){
+  const t=findTarget(target);
+  return t&&typed&&typed.type===t.type&&typeOk(t.type,typed.value,t)?typed.value:undefined;
+}
 function ovOf(v,object,property){
   const list=(v.formatting&&v.formatting.overrides)||[];
   const hit=list.find(o=>o.target&&o.target.object===object&&o.target.property===property&&!o.field);
-  return hit&&hit.value?hit.value.value:undefined;
+  // Invalid retained intent stays in the document, but never becomes preview CSS/markup.
+  return hit?previewValue(hit.target,hit.value):undefined;
 }
 /* the five built-in presets, as the preview understands them */
 function presetLook(name){
@@ -3782,7 +4021,7 @@ function evalCond(c,val,lo,hi){
         case 'between':hit=val>=r.value&&val<=r.value2;break;
         case 'isBlank':hit=val==null;break;   case 'isNotBlank':hit=val!=null;break;
       }
-      if(hit)return r.result&&r.result.value;
+      if(hit)return previewValue(c.target,r.result);
     }
     return null;
   }
@@ -3790,7 +4029,8 @@ function evalCond(c,val,lo,hi){
     const g=c.gradient||{};
     const a=(g.min&&g.min.value!=null)?g.min.value:lo;
     const b=(g.max&&g.max.value!=null)?g.max.value:hi;
-    if(a==null||b==null||b===a)return null;
+    if(!Number.isFinite(a)||!Number.isFinite(b)||b===a)return null;
+    if(!typeOk('color',g.min?.color)||!typeOk('color',g.max?.color))return null;
     const t=clamp((val-a)/(b-a),0,1);
     return mix(g.min&&g.min.color||S.visual,g.max&&g.max.color||S.good,t);
   }
@@ -3806,7 +4046,7 @@ function cellStyler(v,field,vals){
     const hit=((v.formatting&&v.formatting.overrides)||[])
       .find(o=>o.target&&o.target.object===object&&o.target.property===property
         &&(!o.field||sameField(o.field,field)));
-    return hit&&hit.value?hit.value.value:undefined;
+    return hit?previewValue(hit.target,hit.value):undefined;
   };
   const bars=ovAny('dataBars','show')===true;
   const pos=ovAny('dataBars','positiveColor')||S.table;
@@ -4906,48 +5146,81 @@ function bindControls(){
 
 /* ---------- JSON ---------- */
 let jsonView='theme';
-function renderJson(){
-  renderGaps();
-  noteHistory();saveSession();
-  if(mode==='jsoned')renderJsonEd();
-  if(editingJson)return;
-  if(jsonView==='spec'){
-    $('#jsonarea').value=specText();
-    const e=issueCount('error'),w=issueCount('warn');
-    setJsonState(!e,e?`${e} error${e===1?'':'s'}`:(w?`${w} warning${w===1?'':'s'}`:'valid'));
-  }else{
-    $('#jsonarea').value=JSON.stringify(buildThemeJson(S),null,2);
-    setJsonState(true,'valid');
+const jsonDrafts={theme:null,spec:null};
+const drafts=Object.fromEntries(['dock:theme','dock:spec','full:theme','full:spec'].map(k=>[k,{raw:null,base:0,status:'accepted'}]));
+let cancelJsonPending=()=>{},draftCommitBusy=false;
+function clearDraft(key){
+  const d=drafts[key];d.raw=null;d.base=documentRevision;d.status='accepted';
+  const [surface,kind]=key.split(':');
+  if(surface==='dock'){jsonDrafts[kind]=null;if(jsonView===kind)editingJson=false;}
+  else jeDirty[kind]=false;
+}
+function editDraft(key,raw){
+  observeDocument();closeConversion();
+  const d=drafts[key];if(d.raw===null)d.base=documentRevision;
+  d.raw=raw;d.status='pending';
+  const [surface,kind]=key.split(':');
+  if(surface==='dock'){jsonDrafts[kind]=raw;editingJson=true;}else jeDirty[kind]=true;
+}
+function draftResult(key,r){
+  const [surface,kind]=key.split(':');
+  if(surface==='dock')setJsonState(r.applied,r.applied?r.msg:(r.status==='rejected'&&r.issues?.[0]?.code==='syntax'?'JSON error':r.msg));
+  else jeSay(kind==='spec'?'#jeSpecMsg':'#jeThemeMsg',r);
+}
+function commitDraft(key,reapply=false){
+  const d=drafts[key];if(d.raw===null||draftCommitBusy)return;
+  cancelJsonPending();observeDocument();
+  if(d.base!==documentRevision&&!reapply){
+    d.status='conflict';const r={applied:false,status:'conflict',msg:'Newer document accepted. Reapply this draft explicitly or revert it.'};draftResult(key,r);showDraftConflict(key);return r;
   }
+  d.base=documentRevision;draftCommitBusy=true;
+  let r;
+  try{r=key.endsWith(':spec')?applySpecText(d.raw):applyThemeText(d.raw);}
+  finally{draftCommitBusy=false;}
+  if(r.applied)clearDraft(key);
+  else {d.status=r.status;if(pendingConversion)pendingConversion.draft=key;}
+  draftResult(key,r);return r;
+}
+function showDraftConflict(key){
+  let d=$('#draftConflict');if(!d){d=document.createElement('dialog');d.id='draftConflict';d.className='document-dialog';
+    d.innerHTML='<h2>Draft based on an older document</h2><p>Your text is retained. Reapplying it will replace the newer accepted settings for this file. Drafts are not saved across browser restarts.</p><div class="document-actions"><button id="draftKeep">Keep draft</button><button id="draftReapply">Reapply draft</button></div>';document.body.appendChild(d);
+  }
+  $('#draftKeep').onclick=()=>d.close();$('#draftReapply').onclick=()=>{d.close();commitDraft(key,true);refreshDraftEditors();};
+  if(!d.open)d.showModal();$('#draftKeep').focus();
+}
+function refreshDraftEditors(){renderJson();renderJsonEd();}
+function renderJson(){
+  renderGaps();notifyDocumentChange();
+  if(mode==='jsoned')renderJsonEd();
+  const d=drafts['dock:'+jsonView];
+  editingJson=d.raw!==null;
+  if(editingJson){$('#jsonarea').value=d.raw;return;}
+  $('#jsonarea').value=jsonView==='spec'?specText():themeText();
+  setJsonState(true,'accepted');
 }
 function setJsonView(v){
-  jsonView=v;editingJson=false;
-  $('#jsTheme').setAttribute('aria-pressed',v==='theme');
-  $('#jsSpec').setAttribute('aria-pressed',v==='spec');
+  cancelJsonPending();closeConversion();jsonView=v;
+  $('#jsTheme').setAttribute('aria-pressed',v==='theme');$('#jsSpec').setAttribute('aria-pressed',v==='spec');
   $('#jsonarea').setAttribute('aria-label',v==='spec'?'Dashboard spec JSON':'Theme JSON');
-  $('#jsonHint').innerHTML=v==='spec'
-    ?`Edits apply live. Paste a <b>dashboard-spec.json</b> here — from PbiBench, or from an assistant you gave the Copy AI prompt to. Contract v${SPEC_CONTRACT}; v${SPEC_CONTRACT_MIN} files are migrated on paste. Anything outside the vocabulary is reported, never guessed.`
-    :`Edits apply live. Paste any Power&nbsp;BI theme file to read it back into the controls — older schema versions are read too. Exports declare <b>reportThemeSchema-${SCHEMA_VER}</b>${S.srcSchema&&S.srcSchema!==SCHEMA_VER?`; the file you loaded declared ${esc(S.srcSchema)}.`:'.'}`;
-  $('#gaps').style.display=v==='spec'?'none':'';
-  renderJson();
+  $('#jsonHint').textContent='Edits apply after a short pause or blur. Ctrl/Cmd+Enter applies immediately. Lossy theme conversion requires explicit review. Local shape checks are not Microsoft-schema validation. Only accepted changes are autosaved; drafts are not saved across browser restarts.';
+  $('#gaps').style.display=v==='spec'?'none':'';renderJson();
+  const d=drafts['dock:'+v];if(d.raw!==null)setJsonState(false,d.status+' — not applied');
 }
 function setJsonState(ok,msg){const p=$('#jsonState');p.textContent=msg;p.className='pill '+(ok?'good':'bad');}
 function bindJson(){
-  const ta=$('#jsonarea');let t=null;
-  $('#jsTheme').onclick=()=>setJsonView('theme');
-  $('#jsSpec').onclick=()=>setJsonView('spec');
-  ta.addEventListener('input',()=>{editingJson=true;clearTimeout(t);
-    t=setTimeout(()=>{
-      if(jsonView==='spec'){
-        const r=applySpecText(ta.value);
-        setJsonState(r.ok,r.ok?'applied':(/^JSON error/.test(r.msg)?'JSON error':r.msg.slice(0,40)));
-        return;
-      }
-      const r2=applyThemeText(ta.value);
-      setJsonState(r2.ok,r2.ok?'applied':'JSON error');
-    },320);});
-  ta.addEventListener('blur',()=>{editingJson=false;renderJson();});
-  $('#btnRevert').onclick=()=>{editingJson=false;renderJson();};
+  const ta=$('#jsonarea');let timer=null;
+  cancelJsonPending=()=>{clearTimeout(timer);timer=null;};
+  $('#jsTheme').onclick=()=>setJsonView('theme');$('#jsSpec').onclick=()=>setJsonView('spec');
+  ta.addEventListener('input',()=>{
+    cancelJsonPending();const key='dock:'+jsonView;editDraft(key,ta.value);setJsonState(false,'pending');
+    timer=setTimeout(()=>{timer=null;commitDraft(key);},320);
+  });
+  ta.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='Enter'){e.preventDefault();e.stopPropagation();commitDraft('dock:'+jsonView);}});
+  ta.addEventListener('blur',()=>{
+    const key='dock:'+jsonView,d=drafts[key];
+    if(d.raw!==null&&d.status==='pending'&&!draftCommitBusy){const r=commitDraft(key);if(r?.applied)renderJson();}
+  });
+  $('#btnRevert').onclick=()=>{cancelJsonPending();closeConversion();clearDraft('dock:'+jsonView);renderJson();};
 }
 
 
@@ -4957,33 +5230,114 @@ function bindJson(){
    path as the inspector's JSON tab, so a paste behaves identically.
    ================================================================== */
 let jeDirty={spec:false,theme:false}, jeBusy=false;
-function applySpecText(txt){
-  let j;
-  try{j=JSON.parse(txt);}catch(e){return{ok:false,msg:'JSON error - '+String(e.message||e).slice(0,120)};}
-  if(!j||typeof j!=='object')return{ok:false,msg:'A dashboard spec must be a JSON object.'};
-  if(!Array.isArray(j.pages)||!j.pages.length)return{ok:false,msg:'A dashboard spec needs a non-empty pages[] array.'};
-  const fatal=validateSpec(j,true).filter(i=>i.level==='error'&&(i.where==='spec'||i.where==='pages'));
-  if(fatal.length)return{ok:false,msg:fatal[0].msg};
-  const m=migrateSpec(j);
-  SPEC=m.spec;selVis=null;selSet=[];selObj=null;
-  if(cfgPage>=SPEC.pages.length)cfgPage=0;
-  validateSpec(SPEC);rebuildPages();
-  if(page>=PAGES.length)page=0;
-  jeBusy=true;
-  try{renderContext();renderPageTabs();renderMain();renderBind();}finally{jeBusy=false;}
-  const e=issueCount('error'),w=issueCount('warn');
-  const mig=(m.notes&&m.notes.length&&/^migrated/.test(m.notes[0]))?m.notes[0]+' · ':'';
-  return{ok:!e,msg:mig+(e?`applied, ${e} error${e===1?'':'s'} to look at`
-    :(w?`applied · ${w} warning${w===1?'':'s'}`:'applied — the canvas is showing it'))};
-}
-function applyThemeText(txt){
+function applySpecText(txt){return applyPrepared(prepareDocument(txt,'spec'),'spec');}
+function prepareTheme(txt,base=S){
+  const p=prepareDocument(txt,'theme');if(p.status==='rejected')return p;
+  const supplied=p.candidate;
   try{
-    S=parseThemeJson(String(txt).replace(/\/\*[\s\S]*?\*\//g,'').trim());
-    jeBusy=true;
-    try{syncControls();markBank();renderMain();}finally{jeBusy=false;}
-    return{ok:true,msg:`applied — ${esc(S.name)}${S.srcSchema&&S.srcSchema!==SCHEMA_VER?`, read from schema ${esc(S.srcSchema)}`:''}`};
-  }catch(e){return{ok:false,msg:'JSON error - '+String(e.message||e).slice(0,120)};}
+    p.candidate=parseThemeJson(JSON.stringify(supplied),base);
+    p.changes=suppliedChanges(supplied,buildThemeJson(p.candidate));
+    p.status=p.changes.length?'needs-conversion':'ready';
+    if(Object.keys(p.candidate.importedPresets||{}).length)p.issues.push(issue('preview.preset','theme.visualStyles','Named presets are preserved; the preview may not represent them accurately.',false));
+    return p;
+  }catch{return {status:'rejected',issues:[issue('theme.controls','theme','Theme settings cannot be prepared.')]};}
 }
+function applyThemeText(txt,options={}){
+  const p=prepareTheme(txt);
+  if(p.status==='needs-conversion'&&!options.convert){
+    showConversion(p);return resultOf(p,false);
+  }
+  return applyPrepared(p,'theme');
+}
+function resultOf(p,applied){
+  const issues=p.issues||[];
+  return {ok:applied,applied,status:applied?'applied':p.status,issues,changes:p.changes||[],
+    msg:applied?'applied'+(issues.length?' — '+issues.length+' diagnostics: '+issues[0].msg:''):
+      p.status==='needs-conversion'?'Pending conversion — review changed/dropped paths and choose Import supported settings.':
+      (issues[0]?(issues[0].path+': '+issues[0].msg):'Rejected')};
+}
+let applyingDocument=false,documentRevision=0,observedDocument=null,pendingConversion=null;
+function observeDocument(){
+  if(applyingDocument||restoring)return false;
+  const sig=histSig();
+  const changed=observedDocument!==sig;
+  if(observedDocument!==null&&changed){documentRevision++;cancelJsonPending();closeConversion();}
+  observedDocument=sig;
+  return changed;
+}
+// Called by accepted mutation handlers, independently of whether their editor redraws.
+// The signature also deduplicates legacy render paths and leaves workspace-only actions quiet.
+function notifyDocumentChange(){
+  if(applyingDocument||restoring||!observeDocument())return false;
+  validateSpec(SPEC);
+  noteHistory(true);saveSession();renderHistButtons();
+  return true;
+}
+function applyPrepared(p,kind,options={}){
+  if(p.status==='rejected')return resultOf(p,false);
+  const previous={S,SPEC,MODEL,PAGES,specIssues,CW,CH,COLW,page,cfgPage,pageOf:{...pageOf},selVis,selSet,selObj,DIFF,bmPreview,
+    HIST:HIST.slice(),HPOS,revision:documentRevision,observed:observedDocument};
+  const hadHistory=!!_histT,hadSave=!!_saveT;
+  clearTimeout(_histT);clearTimeout(_saveT);cancelJsonPending();
+  applyingDocument=true;const busy=jeBusy;jeBusy=true;
+  try{
+    // Preserve a fast accepted control edit as the predecessor of this import.
+    histPush();
+    if(kind==='spec')SPEC=p.candidate;
+    else if(kind==='model')MODEL=p.candidate;
+    else if(kind==='theme')S=p.candidate;
+    else {S=p.candidate.theme;SPEC=p.candidate.spec;MODEL=p.candidate.model;}
+    selVis=null;selSet=[];selObj=null;bmPreview=null;
+    validateSpec(SPEC);rebuildPages();
+    pageOf={report:0,library:firstOf('library')};
+    const index=n=>Number.isFinite(n)?clamp(Math.floor(n),0,PAGES.length-1):0;
+    page=index(options.page??page);cfgPage=index(options.cfgPage??cfgPage);
+    renderPageTabs();renderAll();jeBusy=busy;renderJsonEd();
+    if(kind==='spec'||kind==='model'||kind==='session')p.issues=[...(p.issues||[]),...specIssues];
+    documentRevision++;observedDocument=histSig();
+    closeConversion();histPush();
+  }catch{
+    S=previous.S;SPEC=previous.SPEC;MODEL=previous.MODEL;PAGES=previous.PAGES;specIssues=previous.specIssues;
+    CW=previous.CW;CH=previous.CH;COLW=previous.COLW;
+    page=previous.page;cfgPage=previous.cfgPage;pageOf=previous.pageOf;selVis=previous.selVis;selSet=previous.selSet;selObj=previous.selObj;
+    DIFF=previous.DIFF;bmPreview=previous.bmPreview;HIST=previous.HIST;HPOS=previous.HPOS;
+    documentRevision=previous.revision;observedDocument=previous.observed;
+    try{renderPageTabs();renderAll();}catch{/* Canonical and derived snapshot remains intact even if the UI adapter fails again. */}
+    clearTimeout(_histT);clearTimeout(_saveT);applyingDocument=false;jeBusy=busy;
+    if(hadHistory)noteHistory();if(hadSave)saveSession();
+    return resultOf({status:'rejected',issues:[issue('application.failed',kind,'Application failed; previous accepted document restored.')]},false);
+  }
+  applyingDocument=false;jeBusy=busy;saveSession();renderHistButtons();
+  return resultOf(p,true);
+}
+function closeConversion(){
+  pendingConversion=null;
+  const d=$('#conversionDialog');if(d?.open)d.close();
+}
+function showConversion(prepared){
+  cancelJsonPending();closeConversion();
+  let d=$('#conversionDialog');
+  if(!d){
+    d=document.createElement('dialog');d.id='conversionDialog';d.className='document-dialog';
+    d.innerHTML='<h2>Review theme conversion</h2><p>Local shape checks only; this is not Microsoft-schema validation. The eight-color controls cannot retain every supplied setting. Named presets are retained, but their preview may be approximate.</p><ul id="conversionPaths"></ul><p>Only accepted changes are autosaved. Pending drafts are not saved across browser restarts.</p><div class="document-actions"><button id="conversionCancel">Cancel</button><button id="conversionApply">Import supported settings</button></div>';
+    document.body.appendChild(d);
+    $('#conversionCancel').onclick=()=>closeConversion();
+    d.addEventListener('cancel',()=>{pendingConversion=null;});
+    $('#conversionApply').onclick=()=>{
+      const pending=pendingConversion;
+      if(!pending||pending.revision!==documentRevision){closeConversion();return;}
+      const r=applyPrepared(pending.prepared,'theme');
+      if(r.applied&&pending.draft){clearDraft(pending.draft);refreshDraftEditors();}
+      setJsonState(r.applied,r.msg);jeSay('#jeThemeMsg',r);
+    };
+  }
+  pendingConversion={prepared,revision:documentRevision,draft:null};
+  const ul=$('#conversionPaths');ul.replaceChildren();
+  prepared.changes.forEach(c=>{const li=document.createElement('li');li.textContent=c.kind+': '+c.path+(c.detail?' — '+c.detail:'');ul.appendChild(li);});
+  const busy=draftCommitBusy;draftCommitBusy=true;
+  try{d.showModal();$('#conversionCancel').focus();}finally{draftCommitBusy=busy;}
+}
+
 function jeSay(sel,r){
   const el=$(sel);if(!el)return;
   el.textContent=r.msg;el.className='jmsg '+(r.ok?'ok':'bad');
@@ -4993,15 +5347,15 @@ function renderJsonEd(){
   const sp=$('#jeSpec'),th=$('#jeTheme');
   if(!sp||!th||jeBusy)return;
   if(jeView==='target'){renderJeTarget();}
-  if(!jeDirty.spec)sp.value=specText();
-  if(!jeDirty.theme)th.value=themeText();
+  sp.value=drafts['full:spec'].raw??specText();
+  th.value=drafts['full:theme'].raw??themeText();
   const e=issueCount('error'),w=issueCount('warn');
   jeState('#jeSpecState',!e,jeDirty.spec?'edited':(e?`${e} error${e===1?'':'s'}`:(w?`${w} warning${w===1?'':'s'}`:'valid')));
   jeState('#jeThemeState',true,jeDirty.theme?'edited':'valid');
   const note=$('#jeThemeNote');
-  if(note)note.innerHTML=`What Power&nbsp;BI reads: palette, text classes, container defaults and five named style presets, declared against <b>reportThemeSchema-${SCHEMA_VER}</b>${S.srcSchema&&S.srcSchema!==SCHEMA_VER?` — the file you loaded declared ${esc(S.srcSchema)}`:''}. Older schema versions are read back without complaint.`;
+  if(note)note.innerHTML=`What Power&nbsp;BI reads: palette, text classes, container defaults and five named style presets, declared against <b>reportThemeSchema-${SCHEMA_VER}</b>${S.srcSchema&&S.srcSchema!==SCHEMA_VER?` — the file you loaded declared ${esc(S.srcSchema)}`:''}. Local shape checks are not Microsoft-schema validation. Changed or dropped supplied settings require explicit conversion approval. Preserved named presets may not preview accurately.`;
   const n=$('#jenote');
-  if(n)n.innerHTML=`Two files, two jobs. The spec on the left is <b>design intent</b> — PbiBench turns it into PBIR. The theme on the right is the file you drop into Power&nbsp;BI Desktop. Edit either, press <b>Apply</b>, and the canvas follows. Nothing is sent anywhere.`;
+  if(n)n.innerHTML=`Two files, two jobs. The spec on the left is <b>design intent</b> — PbiBench turns it into PBIR. The theme on the right is the file you drop into Power&nbsp;BI Desktop. Edit either, press <b>Apply</b>, and the canvas follows. Only accepted changes are autosaved. Drafts are not saved across browser restarts. Nothing is sent anywhere.`;
 }
 let jeView='files';
 function renderJeTarget(){
@@ -5030,35 +5384,20 @@ function setJeView(v){
   if(v==='target')renderJeTarget();
 }
 function bindJsonEd(){
-  const sp=$('#jeSpec'),th=$('#jeTheme');
-  if(!sp||!th)return;
-  $('#jeFiles').onclick=()=>setJeView('files');
-  $('#jeTarget').onclick=()=>setJeView('target');
-  $('#jeMapCopy').onclick=()=>copyText($('#jeMap').value,'#jeMapCopy','Copied');
-  $('#jeMapDl').onclick=downloadTargetMap;
-  sp.addEventListener('input',()=>{jeDirty.spec=true;jeState('#jeSpecState',true,'edited');});
-  th.addEventListener('input',()=>{jeDirty.theme=true;jeState('#jeThemeState',true,'edited');});
-  $('#jeSpecApply').onclick=()=>{
-    const r=applySpecText(sp.value);
-    if(r.ok)jeDirty.spec=false;
-    jeSay('#jeSpecMsg',r);renderJsonEd();};
-  $('#jeThemeApply').onclick=()=>{
-    const r=applyThemeText(th.value);
-    if(r.ok)jeDirty.theme=false;
-    jeSay('#jeThemeMsg',r);renderJsonEd();};
-  const fmtBtn=(ta,which)=>()=>{
-    try{ta.value=JSON.stringify(JSON.parse(ta.value),null,2);
-      jeSay(which==='spec'?'#jeSpecMsg':'#jeThemeMsg',{ok:true,msg:'reformatted — press Apply to use it'});}
-    catch(e){jeSay(which==='spec'?'#jeSpecMsg':'#jeThemeMsg',{ok:false,msg:'JSON error - '+String(e.message||e).slice(0,120)});}};
-  $('#jeSpecFormat').onclick=fmtBtn(sp,'spec');
-  $('#jeThemeFormat').onclick=fmtBtn(th,'theme');
-  $('#jeSpecCopy').onclick=()=>copyText(sp.value,'#jeSpecCopy','Copied');
-  $('#jeThemeCopy').onclick=()=>copyText(th.value,'#jeThemeCopy','Copied');
-  $('#jeReload').onclick=()=>{
-    jeDirty={spec:false,theme:false};renderJsonEd();
-    jeSay('#jeSpecMsg',{ok:true,msg:'reloaded from the app'});
-    jeSay('#jeThemeMsg',{ok:true,msg:'reloaded from the app'});};
+  const sp=$('#jeSpec'),th=$('#jeTheme');if(!sp||!th)return;
+  $('#jeFiles').onclick=()=>setJeView('files');$('#jeTarget').onclick=()=>setJeView('target');
+  $('#jeMapCopy').onclick=()=>copyText($('#jeMap').value,'#jeMapCopy','Copied');$('#jeMapDl').onclick=downloadTargetMap;
+  for(const [kind,ta] of [['spec',sp],['theme',th]]){
+    const key='full:'+kind,prefix=kind==='spec'?'#jeSpec':'#jeTheme';
+    ta.addEventListener('input',()=>{editDraft(key,ta.value);jeState(prefix+'State',false,'pending');});
+    ta.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='Enter'){e.preventDefault();e.stopPropagation();commitDraft(key);renderJsonEd();}});
+    $(prefix+'Apply').onclick=()=>{commitDraft(key);renderJsonEd();};
+    $(prefix+'Format').onclick=()=>{try{ta.value=JSON.stringify(JSON.parse(ta.value),null,2);editDraft(key,ta.value);jeSay(prefix+'Msg',{ok:true,msg:'Reformatted — press Apply to use it.'});}catch{jeSay(prefix+'Msg',{ok:false,msg:'JSON error'});}};
+    $(prefix+'Copy').onclick=()=>copyText(ta.value,prefix+'Copy','Copied');
+  }
+  $('#jeReload').onclick=()=>{closeConversion();clearDraft('full:spec');clearDraft('full:theme');renderJsonEd();};
 }
+
 
 /* ---------- export ---------- */
 let DOWNLOADS=null,SAMPLE=null;
@@ -5321,8 +5660,7 @@ function findVis(){
 
 /* ---------- redraw paths ---------- */
 function specTouch(){
-  validateSpec(SPEC);rebuildPages();
-  noteHistory();saveSession();
+  notifyDocumentChange();rebuildPages();
   if(cfgPage>=PAGES.length)cfgPage=PAGES.length-1;
   renderContext();renderPageTabs();
   if(mode==='config'){
@@ -5589,7 +5927,7 @@ function ctxSay(m,bad,html){
   if(m&&!html)_ctxT=setTimeout(()=>{el.textContent='';el.className='';},7000);
 }
 function startFresh(){
-  clearSession();
+  clearSession();cancelJsonPending();closeConversion();documentRevision++;
   MODEL=SAMPLE_MODEL;SPEC=defaultSpec();S=resolve(0,0);
   selVis=null;selSet=[];selObj=null;cfgPage=0;page=0;
   validateSpec(SPEC);rebuildPages();
@@ -5784,8 +6122,8 @@ function wireBind(c){
   $('#bKind').onchange=e=>changeKind(c,e.target.value);
   $('#bTitle').oninput=e=>{v.title=e.target.value;light();};
   $('#bPurpose').oninput=e=>{v.purpose=e.target.value;light();};
-  $('#bInter').oninput=e=>{v.interaction=e.target.value;};
-  $('#bAlt').oninput=e=>{const t=e.target.value;if(t)v.altText=t;else delete v.altText;};
+  $('#bInter').oninput=e=>{v.interaction=e.target.value;notifyDocumentChange();};
+  $('#bAlt').oninput=e=>{const t=e.target.value;if(t)v.altText=t;else delete v.altText;notifyDocumentChange();};
   $('#bAlt').onchange=()=>specTouch();
   $('#bId').onchange=e=>{
     const want=String(e.target.value||'').trim();
@@ -5871,14 +6209,16 @@ function fmtTargetOptions(list,cur){
     +byL[l].map(t=>`<option value="${esc(t.id)}"${t.id===cur?' selected':''}>${esc(t.label)}</option>`).join('')
     +'</optgroup>').join('');
 }
+// Attribute context stays safe even for retained, diagnostically invalid typed values.
+const editorValue=v=>esc(v==null?'':typeof v==='object'?JSON.stringify(v):String(v));
 function valueEditor(t,val,attr){
   switch(t.type){
     case 'boolean':return `<select ${attr}><option value="true"${val===true?' selected':''}>on</option><option value="false"${val===false?' selected':''}>off</option></select>`;
     case 'color':return `<input type="color" ${attr} value="${esc(typeof val==='string'&&/^#[0-9A-Fa-f]{6}$/.test(val)?val:'#000000')}">`;
     case 'enum':return `<select ${attr}>${(t.values||[]).map(o=>`<option${o===val?' selected':''}>${esc(o)}</option>`).join('')}</select>`;
     case 'integer':
-    case 'number':return `<input type="number" ${attr} value="${val==null?'':val}"${t.min!=null?` min="${t.min}"`:''}${t.max!=null?` max="${t.max}"`:''}${t.type==='integer'?' step="1"':' step="any"'}>`;
-    default:return `<input type="text" ${attr} value="${esc(val==null?'':String(val))}">`;
+    case 'number':return `<input type="number" ${attr} value="${editorValue(val)}"${t.min!=null?` min="${esc(t.min)}"`:''}${t.max!=null?` max="${esc(t.max)}"`:''}${t.type==='integer'?' step="1"':' step="any"'}>`;
+    default:return `<input type="text" ${attr} value="${editorValue(val)}">`;
   }
 }
 const readEditor=(t,el)=>{
@@ -5950,20 +6290,20 @@ function fmtHtml(owner,scope){
     if(scope==='visual')body+=`<div class="bindrow"><label>applies to</label>
         <select data-cffield="${i}" style="grid-column:2/-1">${scopeFieldOptions(owner,c.field)}</select></div>`;
     if(c.mode==='rules'){
-      body+=(c.rules||[]).map((r,ri)=>`<div class="rulerow">
+      body+=(c.rules||[]).map((r,ri)=>`<div class="rulerow fmtrule">
         <select data-cfop="${i}.${ri}">${Object.keys(CF_OPS).map(o=>`<option value="${o}"${o===r.operator?' selected':''}>${esc(CF_OPS[o])}</option>`).join('')}</select>
-        ${OP_NEEDS_VALUE(r.operator)?`<input type="number" step="any" data-cfval="${i}.${ri}" value="${r.value==null?'':r.value}">`:'<span></span>'}
-        ${r.operator==='between'?`<input type="number" step="any" data-cfval2="${i}.${ri}" value="${r.value2==null?'':r.value2}">`:''}
+        ${OP_NEEDS_VALUE(r.operator)?`<input aria-label="Rule threshold" type="${typeof r.value==='string'?'text':'number'}" step="any" data-cfval="${i}.${ri}" value="${editorValue(r.value==null?'':r.value)}">`:'<span></span>'}
+        ${r.operator==='between'?`<input aria-label="Second rule threshold" type="${typeof r.value2==='string'?'text':'number'}" step="any" data-cfval2="${i}.${ri}" value="${editorValue(r.value2==null?'':r.value2)}">`:''}
         ${valueEditor(t,r.result&&r.result.value,`data-cfres="${i}.${ri}"`)}
         <button class="x" data-rmrule="${i}.${ri}">×</button></div>`).join('')
         +`<div class="btnrow"><button class="chip" data-addrule="${i}">+ rule</button></div>`;
     }else if(c.mode==='gradient'){
       const g=c.gradient||{};
       body+=`<div class="rulerow"><span class="lo">min</span>
-        <input type="number" step="any" data-cfgv="${i}.min" value="${g.min&&g.min.value!=null?g.min.value:''}" placeholder="auto">
+        <input type="number" step="any" data-cfgv="${i}.min" value="${editorValue(g.min&&g.min.value!=null?g.min.value:'')}" placeholder="auto">
         ${valueEditor(t,g.min&&g.min.color,`data-cfgc="${i}.min"`)}</div>
         <div class="rulerow"><span class="lo">max</span>
-        <input type="number" step="any" data-cfgv="${i}.max" value="${g.max&&g.max.value!=null?g.max.value:''}" placeholder="auto">
+        <input type="number" step="any" data-cfgv="${i}.max" value="${editorValue(g.max&&g.max.value!=null?g.max.value:'')}" placeholder="auto">
         ${valueEditor(t,g.max&&g.max.color,`data-cfgc="${i}.max"`)}</div>`;
     }else{
       body+=`<p class="hint" style="margin:2px 0 0">The field itself returns the ${esc(t.type)}. PbiBench binds it directly.</p>`;
@@ -5978,7 +6318,7 @@ function wireFmt(owner,scope,root){
   const pfx=scope==='page'?'pg':'vi';
   const el=id=>root.querySelector('#'+id);
   const f=()=>owner.formatting||(owner.formatting={});
-  const done=()=>{validateSpec(SPEC);rebuildPages();renderContext();
+  const done=()=>{notifyDocumentChange();rebuildPages();renderContext();
     if(scope==='page')renderConfig();else renderBind();
     if(mode==='report'||mode==='library')renderCanvas();};
   const pre=el(pfx+'Preset');
@@ -6036,8 +6376,8 @@ function wireFmt(owner,scope,root){
     else if(r.value==null)r.value=0;
     if(r.operator!=='between')delete r.value2; else if(r.value2==null)r.value2=0;
     done();});
-  root.querySelectorAll('[data-cfval]').forEach(inp=>inp.onchange=e=>{rule(inp.dataset.cfval).value=+e.target.value;done();});
-  root.querySelectorAll('[data-cfval2]').forEach(inp=>inp.onchange=e=>{rule(inp.dataset.cfval2).value2=+e.target.value;done();});
+  root.querySelectorAll('[data-cfval]').forEach(inp=>inp.onchange=e=>{rule(inp.dataset.cfval).value=e.target.type==='text'?e.target.value:+e.target.value;done();});
+  root.querySelectorAll('[data-cfval2]').forEach(inp=>inp.onchange=e=>{rule(inp.dataset.cfval2).value2=e.target.type==='text'?e.target.value:+e.target.value;done();});
   root.querySelectorAll('[data-cfres]').forEach(inp=>inp.onchange=e=>{
     const k=inp.dataset.cfres,[i]=k.split('.').map(Number);
     const t=findTarget(f().conditional[i].target);if(!t)return;
@@ -6067,7 +6407,7 @@ function bindSpecEditor(specIdx){
   if(specIdx==null||specIdx<0||!SPEC||!SPEC.pages[specIdx])return;
   const t=$('#pgTitle');if(!t)return;
   const pg=SPEC.pages[specIdx];
-  t.oninput=e=>{pg.title=e.target.value;validateSpec(SPEC);rebuildPages();
+  t.oninput=e=>{pg.title=e.target.value;notifyDocumentChange();rebuildPages();
     $('#cfgPage').innerHTML=PAGE_OPTS();renderPageTabs();renderContext();};
   t.onchange=()=>specTouch();
   $('#pgArch').onchange=e=>{pg.archetype=e.target.value;afterSpec();};
@@ -6282,8 +6622,9 @@ function nudge(dx,dy){
 function bindKeys(){
   addEventListener('keydown',e=>{
     const mod=e.metaKey||e.ctrlKey;
-    if(mod&&(e.key==='z'||e.key==='Z')){e.preventDefault();histGo(e.shiftKey?1:-1);return;}
-    if(mod&&(e.key==='y'||e.key==='Y')){e.preventDefault();histGo(1);return;}
+    // Text fields keep native undo/redo; report history is for the canvas.
+    if(mod&&!typing(document.activeElement)&&(e.key==='z'||e.key==='Z')){e.preventDefault();histGo(e.shiftKey?1:-1);return;}
+    if(mod&&!typing(document.activeElement)&&(e.key==='y'||e.key==='Y')){e.preventDefault();histGo(1);return;}
     /* workspace shortcuts — Alt, so nothing collides with the browser's own */
     if(e.altKey&&!mod){
       if(e.key==='1'||e.key==='2'||e.key==='3'){e.preventDefault();setLevel(e.key);return;}
@@ -6326,78 +6667,23 @@ function scrub(o,hits,depth){
     out[k]=scrub(o[k],hits,depth+1);});
   return out;
 }
-function validateModel(m){
-  const out=[];
-  if(!m||typeof m!=='object'||Array.isArray(m))return ['the file is not a JSON object'];
-  if(m.contractVersion&&m.contractVersion!==1)out.push(`model contract ${m.contractVersion} — this build reads 1`);
-  if(!Array.isArray(m.tables)||!m.tables.length)return ['no tables[] — there is nothing to bind to'];
-  m.tables.forEach((t,i)=>{
-    if(!t||!t.name){out.push(`tables[${i}] has no name`);return;}
-    if(t.columns&&!Array.isArray(t.columns))out.push(`${t.name}.columns is not an array`);
-    if(t.measures&&!Array.isArray(t.measures))out.push(`${t.name}.measures is not an array`);
-    (t.columns||[]).forEach((c,j)=>{if(!c||!c.name)out.push(`${t.name}.columns[${j}] has no name`);});
-    (t.measures||[]).forEach((c,j)=>{if(!c||!c.name)out.push(`${t.name}.measures[${j}] has no name`);});
-  });
-  if(m.relationships&&!Array.isArray(m.relationships))out.push('relationships is not an array');
-  const n=m.tables.reduce((a,t)=>a+((t.columns||[]).length+(t.measures||[]).length),0);
-  if(!n)out.push('the model has tables but no columns or measures');
-  return out;
-}
+function validateModel(m){return prepareDocument(m,'model').issues.filter(i=>i.blocking).map(i=>i.path+': '+i.msg);}
 function loadModel(j,name){
-  const bad=validateModel(j);
-  if(bad.length&&(!j||!Array.isArray(j.tables)||!j.tables.length)){ctxSay(`Rejected ${name}: ${bad[0]}`,true);return;}
-  const hits=[];const clean=scrub(j,hits,0);
-  const rows=(clean.tables||[]).reduce((a,t)=>a+((t.columns||[]).length+(t.measures||[]).length),0);
-  if(rows>4000){ctxSay(`Rejected ${name}: ${rows} fields is beyond what this preview handles.`,true);return;}
-  MODEL=clean;
-  validateSpec(SPEC);rebuildPages();renderAll();
-  const parts=[`${mTables().length} tables`,`${mColumns().length} columns`,`${mMeasures().length} measures`];
-  ctxSay(`Model "${MODEL.modelName||name}" loaded — ${parts.join(', ')}.`
-    +(hits.length?` Removed ${hits.length} credential-looking field${hits.length===1?'':'s'}.`:'')
-    +(bad.length?` ${bad.length} note${bad.length===1?'':'s'}: ${bad[0]}`:'')
-    +(issueCount('error')?` ${issueCount('error')} binding error${issueCount('error')===1?'':'s'} against this model.`:''),
-    !!(bad.length||issueCount('error')));
+  const r=applyPrepared(prepareDocument(j,'model'),'model');
+  ctxSay((r.applied?'Model loaded — ':'Rejected '+name+': ')+r.msg,!r.applied);return r;
 }
 function loadSpec(j,name){
-  if(!j||typeof j!=='object'||Array.isArray(j)){ctxSay(`Rejected ${name}: not a JSON object`,true);return;}
-  if(!Array.isArray(j.pages)||!j.pages.length){ctxSay(`Rejected ${name}: no pages[]`,true);return;}
-  const hits=[];const clean=scrub(j,hits,0);
-  const nvis=clean.pages.reduce((a,p)=>a+((p.visuals||[]).length),0);
-  if(clean.pages.length>40||nvis>400){ctxSay(`Rejected ${name}: ${clean.pages.length} pages / ${nvis} visuals is beyond this preview.`,true);return;}
-  clean.pages.forEach((pg,i)=>{
-    pg.id=pg.id||('page-'+(i+1));pg.canvas=pg.canvas||{width:CW,height:CH};
-    (pg.visuals||[]).forEach((v,k)=>{v.id=v.id||(v.kind||'visual')+'-'+(k+1);v.position=v.position||{};});});
-  const mig=migrateSpec(clean);
-  SPEC=mig.spec;selVis=null;selSet=[];cfgPage=0;page=0;
-  validateSpec(SPEC);rebuildPages();
-  pageOf.report=0;pageOf.library=firstOf('library');
-  renderAll();
-  const e=issueCount('error'),w=issueCount('warn');
-  ctxSay(`Spec "${(SPEC.report&&SPEC.report.title)||name}" loaded — ${SPEC.pages.length} pages, ${nvis} visuals, ${e} error${e===1?'':'s'}, ${w} warning${w===1?'':'s'}.`
-    +(mig.notes.length?` ${mig.notes[0]}.`:'')
-    +(hits.length?` Removed ${hits.length} credential-looking field${hits.length===1?'':'s'}.`:''),e>0);
+  const r=applyPrepared(prepareDocument(j,'spec'),'spec');
+  ctxSay((r.applied?'Spec loaded — ':'Rejected '+name+': ')+r.msg,!r.applied);return r;
 }
 function cleanFormatting(f,scope){
-  if(!f)return undefined;
-  const tgt=x=>x&&x.target&&x.target.layer&&x.target.object&&x.target.property
-    ?{layer:x.target.layer,object:x.target.object,property:x.target.property}:null;
-  const ov=(f.overrides||[]).filter(o=>tgt(o)&&o.value&&typeof o.value==='object')
-    .map(o=>({id:o.id,target:tgt(o),
-      field:o.field||undefined,value:{type:o.value.type,value:o.value.value},
-      sourceControl:o.sourceControl||undefined}));
-  const cf=(f.conditional||[]).filter(c=>tgt(c))
-    .map(c=>({id:c.id,target:tgt(c),
-      field:c.field||undefined,basedOn:c.basedOn,mode:c.mode,
-      rules:c.mode==='rules'?(c.rules||[]):undefined,
-      gradient:c.mode==='gradient'?(c.gradient||undefined):undefined}));
-  const preset=scope==='visual'&&f.stylePreset?f.stylePreset:undefined;
-  if(!ov.length&&!cf.length&&!preset)return undefined;
-  return {stylePreset:preset,overrides:ov.length?ov:undefined,conditional:cf.length?cf:undefined};
+  // Incomplete formatting remains editable intent, including inert extensions.
+  return f?structuredClone(f):undefined;
 }
 function exportVisual(v){
   const K=VOCAB[v.kind];
   const sub=isSubstituted(v.kind);
-  return {
+  return {...structuredClone(v),
     id:v.id,
     kind:v.kind,                                     /* design intent — never the stand-in */
     objectClass:K?K.oc:'unsupported',
@@ -6419,13 +6705,14 @@ function exportVisual(v){
     formatting:cleanFormatting(v.formatting,'visual')};
 }
 function exportSpec(){
+  validateSpec(SPEC);
   const src=SPEC||blankSpec();
   const vocab=VOCAB_IDS.map(k=>({kind:k,name:VOCAB[k].n,objectClass:VOCAB[k].oc,
     visualType:pbiType(k),roles:VOCAB[k].roles,
     drawnByThemeForge:!!KINDS[k],
     previewKind:isSubstituted(k)?previewKindOf(k):undefined,
     formattingLandsIn:KIND_NOTE[k]||null}));
-  return {contractVersion:SPEC_CONTRACT,
+  return {...structuredClone(src),contractVersion:SPEC_CONTRACT,
    generator:'Theme Forge '+APPVER,
    generatedAt:new Date().toISOString(),
    modelFingerprint:(MODEL&&MODEL.modelFingerprint)||src.modelFingerprint||null,
@@ -6456,7 +6743,7 @@ function exportSpec(){
    report:src.report||{title:'Untitled report'},
    filters:(src.filters&&src.filters.length)?src.filters:undefined,
    bookmarks:(src.bookmarks&&src.bookmarks.length)?src.bookmarks:undefined,
-   pages:(src.pages||[]).map(pg=>({id:pg.id,title:pg.title,archetype:pg.archetype,
+   pages:(src.pages||[]).map(pg=>({...structuredClone(pg),id:pg.id,title:pg.title,archetype:pg.archetype,
      purpose:pg.purpose||undefined,storyId:pg.storyId||undefined,
      canvas:pg.canvas||{width:CW,height:CH},
      formatting:cleanFormatting(pg.formatting,'page'),
@@ -6489,7 +6776,7 @@ Canvas ${CW} x ${CH} px. position is absolute pixels: {x, y, width, height}.
 A 12-column grid sits at x = ${MG} + col*(${COLW}+${GUT}); a span of n columns is n*${COLW}+(n-1)*${GUT} px wide.
 Leave the top ${BANDH()} px for the page header band. Nothing may extend past ${CW} x ${CH}.
 
-VOCABULARY — only these kinds, only these roles. Anything else is rejected by the importer, so do not invent visual types.
+VOCABULARY — only these kinds, only these roles. Other kinds remain unsupported intent with diagnostics, so do not invent visual types.
 "kind" is design intent and is always what gets built. Kinds in the second group are native Power BI
 visuals that the preview cannot draw; do NOT substitute another kind for them — the tool adds
 "previewKind"/"previewSubstitution" itself, and those two fields are preview-only. Never write them yourself.
@@ -6575,42 +6862,48 @@ TASK
    ================================================================== */
 const HIST_MAX=80;
 let HIST=[],HPOS=-1,_histT=null,restoring=false;
-const histSig=()=>JSON.stringify([SPEC,{...S,presets:undefined}]);
+const histSig=()=>JSON.stringify([SPEC,S,MODEL]);
 function histPush(){
   if(restoring)return;
   const sig=histSig();
   if(HPOS>=0&&HIST[HPOS]&&HIST[HPOS].sig===sig)return;
   HIST=HIST.slice(0,HPOS+1);
-  HIST.push({sig,spec:JSON.parse(JSON.stringify(SPEC)),theme:JSON.parse(JSON.stringify(S))});
+  HIST.push({sig,spec:structuredClone(SPEC),theme:structuredClone(S),model:MODEL});
   if(HIST.length>HIST_MAX)HIST.shift();
   HPOS=HIST.length-1;
   renderHistButtons();
 }
-function noteHistory(){
+function noteHistory(observed=false){
+  if(applyingDocument||restoring)return;
+  if(!observed)observeDocument();
   clearTimeout(_histT);
   _histT=setTimeout(histPush,420);
 }
 function histGo(d){
+  // Record the current user edit before moving through history, even within the debounce.
+  clearTimeout(_histT);histPush();
   const n=HPOS+d;
   if(n<0||n>=HIST.length)return;
   clearTimeout(_histT);
+  cancelJsonPending();closeConversion();documentRevision++;
   HPOS=n;restoring=true;
   const h=HIST[HPOS];
   SPEC=JSON.parse(JSON.stringify(h.spec));
   S=JSON.parse(JSON.stringify(h.theme));
-  selVis=null;selSet=[];
+  MODEL=h.model;
+  selVis=null;selSet=[];selObj=null;
   validateSpec(SPEC);rebuildPages();
   if(cfgPage>=PAGES.length)cfgPage=0;
   if(page>=PAGES.length)page=0;
   renderAll();
-  /* hold past the debounce window so the restored state is not re-pushed */
-  setTimeout(()=>{restoring=false;renderHistButtons();},650);
+  clearTimeout(_histT);restoring=false;observedDocument=histSig();saveSession();
   renderHistButtons();
   ctxSay(`${d<0?'Undo':'Redo'} — step ${HPOS+1} of ${HIST.length}.`);
 }
 function renderHistButtons(){
   const u=$('#btnUndo'),r=$('#btnRedo');if(!u||!r)return;
-  u.disabled=HPOS<=0;r.disabled=HPOS>=HIST.length-1;
+  const pending=HPOS>=0&&HIST[HPOS]?.sig!==histSig();
+  u.disabled=HPOS<=0&&!pending;r.disabled=pending||HPOS>=HIST.length-1;
   u.title=u.disabled?'Nothing to undo':`Undo (step ${HPOS+1} of ${HIST.length})`;
   r.title=r.disabled?'Nothing to redo':'Redo';
 }
@@ -6623,36 +6916,75 @@ function renderHistButtons(){
 const LS_KEY='theme-forge.session.v2';
 let _saveT=null;
 function saveSession(){
+  if(applyingDocument||restoring||recoveryRaw!==null)return;
   clearTimeout(_saveT);
-  _saveT=setTimeout(()=>{
+  _saveT=setTimeout(flushSession,700);
+}
+function flushSession(){
+  clearTimeout(_saveT);_saveT=null;
+  if(applyingDocument||recoveryRaw!==null)return;
     try{
       localStorage.setItem(LS_KEY,JSON.stringify({
-        v:APPVER,at:Date.now(),
+        v:APPVER,sessionVersion:1,at:Date.now(),
         theme:S,spec:SPEC,
         model:(MODEL&&MODEL!==SAMPLE_MODEL)?MODEL:null,
         page,cfgPage,mode}));
-    }catch(e){/* private window, quota, or blocked site data — carry on */}
-  },700);
+      $('#saveStatus').hidden=true;
+    }catch(e){$('#saveStatus').hidden=false;ctxSay('Autosave unavailable. Download your theme and spec to keep your changes.',true);}
+}
+let recoveryRaw=null;
+function recoveryNotice(){
+  let box=$('#recoveryNotice');
+  if(!box){box=document.createElement('aside');box.id='recoveryNotice';box.className='recovery-notice';box.setAttribute('role','status');
+    box.innerHTML='<strong>Saved session needs recovery</strong><p>The original data is retained. Autosave is paused until you intentionally replace it.</p><div class="document-actions"><button id="recoveryDownload">Save original data</button><button id="recoveryReplace">Replace with current document</button></div>';
+    document.body.appendChild(box);
+    $('#recoveryDownload').onclick=()=>browserSave('theme-forge-recovery-original.json',recoveryRaw);
+    $('#recoveryReplace').onclick=()=>{recoveryRaw=null;box.remove();flushSession();};
+  }
 }
 function loadSession(){
-  let raw=null;
-  try{raw=localStorage.getItem(LS_KEY);}catch(e){return null;}
-  if(!raw)return null;
-  try{
-    const j=JSON.parse(raw);
-    if(!j||!j.theme||!j.spec||!Array.isArray(j.spec.pages))return null;
-    return j;
-  }catch(e){return null;}
+  let raw;
+  try{raw=localStorage.getItem(LS_KEY);}catch{$('#saveStatus').hidden=false;return null;}
+  if(raw===null)return null;
+  recoveryRaw=raw;
+  try{return JSON.parse(raw);}catch{recoveryNotice();return null;}
 }
-function clearSession(){try{localStorage.removeItem(LS_KEY);}catch(e){}}
+function clearSession(){
+  recoveryRaw=null;$('#recoveryNotice')?.remove();
+  try{localStorage.removeItem(LS_KEY);}catch{$('#saveStatus').hidden=false;}
+}
+function prepareSession(j){
+  const fail=msg=>({status:'rejected',issues:[issue('session.shape','session',msg)]});
+  if(!record(j))return fail('Saved session must be an object.');
+  if(j.sessionVersion!==undefined&&j.sessionVersion!==1)return fail('Unsupported session envelope version.');
+  if(j.v!==undefined&&j.v!==APPVER&&!/^1\.[0-6](?:\.\d+)?$/.test(j.v))return fail('Unsupported saved application version.');
+  const spec=prepareDocument(j.spec,'spec');if(spec.status==='rejected')return spec;
+  const model=prepareDocument(j.model===null||j.model===undefined?SAMPLE_MODEL:j.model,'model');if(model.status==='rejected')return model;
+  const theme=inputData(j.theme,'themeControls');if(theme.issues.length)return {...theme,status:'rejected'};
+  const t=theme.candidate,base=resolve(0,0);
+  if(!record(t)||!Array.isArray(t.data)||t.data.length!==8||t.data.some(c=>typeof c!=='string'||!hx(c)))return fail('Saved theme needs eight valid palette colors.');
+  for(const [k,v] of Object.entries(base)){
+    if(!Object.hasOwn(t,k))continue;
+    if(v!==null&&typeof v!=='object'&&(typeof t[k]!==typeof v||(typeof v==='number'&&!Number.isFinite(t[k]))))return fail('Invalid saved theme control: '+k);
+    if(record(v)&&!record(t[k]))return fail('Invalid saved theme container: '+k);
+    if(typeof v==='string'&&/^#[0-9A-F]{6}$/i.test(v)&&!hx(t[k]))return fail('Invalid saved theme color: '+k);
+  }
+  if(t.presets!==undefined&&(!Array.isArray(t.presets)||t.presets.some(n=>typeof n!=='string')))return fail('Invalid saved preset names.');
+  if(t.importedPresets!==undefined){const issues=shapeIssues({visualStyles:t.importedPresets},'theme');if(issues.length)return {status:'rejected',issues};}
+  if(t.nav!==undefined&&!record(t.nav))return fail('Invalid navigation controls.');
+  if(t.nav){
+    for(const [k,v] of Object.entries(NAV0))if(Object.hasOwn(t.nav,k)&&typeof t.nav[k]!==typeof v)return fail('Invalid navigation control: '+k);
+    if(t.nav.size!==undefined&&!Object.hasOwn(NAVSZ,t.nav.size))return fail('Invalid navigation size.');
+  }
+  if(t.pagesOff!==undefined&&(!Array.isArray(t.pagesOff)||t.pagesOff.some(n=>typeof n!=='string')))return fail('Invalid hidden-page list: expected page-name strings.');
+  if(t.ov!==undefined&&(!record(t.ov)||Object.values(t.ov).some(n=>!Number.isInteger(n))))return fail('Invalid layout controls.');
+  return {status:'ready',candidate:{theme:{...base,...t},spec:spec.candidate,model:model.candidate},issues:[...spec.issues,...model.issues]};
+}
 function restoreSession(j){
-  S=normalise({...resolve(0,0),...j.theme});
-  SPEC=migrateSpec(j.spec).spec;
-  if(j.model&&Array.isArray(j.model.tables))MODEL=j.model;
-  validateSpec(SPEC);rebuildPages();
-  pageOf={report:0,library:firstOf('library')};
-  page=Math.min(j.page||0,PAGES.length-1);
-  cfgPage=Math.min(j.cfgPage||0,PAGES.length-1);
+  const p=prepareSession(j);
+  const r=applyPrepared(p,'session',{page:j?.page,cfgPage:j?.cfgPage});
+  if(!r.applied)throw Error(r.msg);
+  recoveryRaw=null;$('#recoveryNotice')?.remove();saveSession();
   return true;
 }
 
@@ -6679,8 +7011,8 @@ function filterBody(f,i,pfx){
           ?`<div class="valchips">${vals.map(v=>`<button class="vchip2" data-fval="${i}" data-v="${esc(v)}" aria-pressed="${(f.values||[]).includes(v)}">${esc(v)}</button>`).join('')}</div>`
           :`<input type="text" data-ftext="${i}" value="${esc((f.values||[]).join(', '))}" placeholder="comma-separated values" style="width:100%;max-width:none">`}`;
     case 'range':
-      return `<div class="rulerow"><span class="lo">from</span><input type="number" step="any" data-fmin="${i}" value="${f.min==null?'':f.min}" placeholder="any">
-        <span class="lo">to</span><input type="number" step="any" data-fmax="${i}" value="${f.max==null?'':f.max}" placeholder="any"></div>`;
+      return `<div class="rulerow"><span class="lo">from</span><input type="number" step="any" data-fmin="${i}" value="${editorValue(f.min==null?'':f.min)}" placeholder="any">
+        <span class="lo">to</span><input type="number" step="any" data-fmax="${i}" value="${editorValue(f.max==null?'':f.max)}" placeholder="any"></div>`;
     case 'relativeDate':
       return `<div class="rulerow">
         <select data-fdir="${i}" style="max-width:78px">${REL_DIRECTIONS.map(d=>`<option${d===f.direction?' selected':''}>${d}</option>`).join('')}</select>
@@ -6689,7 +7021,7 @@ function filterBody(f,i,pfx){
     case 'topN':
       return `<div class="rulerow">
         <select data-fdir="${i}" style="max-width:74px">${TOPN_DIRECTIONS.map(d=>`<option${d===f.direction?' selected':''}>${d}</option>`).join('')}</select>
-        <input type="number" min="1" max="1000" data-fcount="${i}" value="${f.count==null?10:f.count}">
+        <input type="number" min="1" max="1000" data-fcount="${i}" value="${editorValue(f.count==null?10:f.count)}">
         <span class="lo">by</span>
         <select data-forder="${i}">${fieldOptions('Field',f.orderBy)}</select></div>`;
     case 'advanced':
@@ -6725,7 +7057,7 @@ function filtersHtml(owner,scope,pfx){
 }
 function wireFilters(owner,scope,root,pfx){
   const list=()=>owner.filters||(owner.filters=[]);
-  const done=()=>{validateSpec(SPEC);rebuildPages();renderContext();
+  const done=()=>{notifyDocumentChange();rebuildPages();renderContext();
     if(scope==='visual')renderBind();else renderConfig();
     if(mode==='report'||mode==='library')renderCanvas();};
   const add=root.querySelector('#'+pfx+'FAdd');
@@ -6805,7 +7137,7 @@ function bookmarksHtml(){
 }
 function wireBookmarks(root){
   const bm=()=>SPEC.bookmarks||(SPEC.bookmarks=[]);
-  const done=()=>{validateSpec(SPEC);rebuildPages();renderContext();renderConfig();};
+  const done=()=>{notifyDocumentChange();rebuildPages();renderContext();renderConfig();};
   const add=root.querySelector('#bmAdd');
   if(add)add.onclick=()=>{
     const pg=(PAGES[cfgPage]&&PAGES[cfgPage].spec!=null)?SPEC.pages[PAGES[cfgPage].spec]:SPEC.pages[0];
@@ -7029,13 +7361,15 @@ function diffText(){
       :'The two specs are identical.');
 }
 function compareSpec(j,name){
-  if(!j||!Array.isArray(j.pages)){ctxSay(`Rejected ${name}: no pages[] to compare`,true);return;}
-  const base=migrateSpec(JSON.parse(JSON.stringify(j))).spec;
-  DIFF=diffSpec(base,JSON.parse(JSON.stringify(SPEC)),name);
-  renderIssues();
-  ctxSay(DIFF.lines.length
-    ?`${DIFF.lines.length} difference${DIFF.lines.length===1?'':'s'} against ${name}. Nothing was changed.`
-    :`The current spec is identical to ${name}.`);
+  const p=prepareDocument(j,'spec');
+  if(p.status==='rejected'){const r=resultOf(p,false);ctxSay('Rejected '+name+': '+r.msg,true);return r;}
+  try{
+    const next=diffSpec(p.candidate,structuredClone(SPEC),name);
+    const previous=DIFF;DIFF=next;
+    try{renderIssues();}catch(e){DIFF=previous;throw e;}
+    ctxSay(next.lines.length+' differences against '+name+'. Nothing was changed.');
+    return {...resultOf(p,false),status:'compared',candidate:p.candidate};
+  }catch{return resultOf({status:'rejected',issues:[issue('comparison.failed','spec','Comparison failed; previous comparison retained.')]},false);}
 }
 
 /* ==================================================================
@@ -7173,9 +7507,10 @@ function bindContextIO(){
     drop.addEventListener('drop',async e=>{
       e.preventDefault();
       const f=e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files[0];if(!f)return;
+      if(f.size>4*1024*1024){ctxSay('File exceeds the 4 MB preview limit.',true);return;}
       let j;try{j=JSON.parse(await f.text());}catch(err){ctxSay(`Could not read ${f.name} — not valid JSON`,true);return;}
-      if(Array.isArray(j.tables))loadModel(j,f.name);
-      else if(Array.isArray(j.pages))loadSpec(j,f.name);
+      if(Array.isArray(j?.tables))loadModel(j,f.name);
+      else if(Array.isArray(j?.pages))loadSpec(j,f.name);
       else ctxSay(`${f.name} is neither a model context (tables[]) nor a dashboard spec (pages[]).`,true);
     });
   }
@@ -7913,6 +8248,7 @@ function chromeSync(){
 }
 
 /* ---------- boot ---------- */
+[VOCAB,KINDS,INTENT_ONLY,FONTSTACK,CF_OPS,CAT_OPS,COND_OPS].forEach(r=>Object.setPrototypeOf(r,null));
 MODEL=SAMPLE_MODEL;SPEC=defaultSpec();validateSpec(SPEC);rebuildPages();
 pageOf={report:0,library:firstOf('library')};page=0;cfgPage=0;
 buildBank();bindControls();bindJson();bindAssistant();
@@ -7975,7 +8311,7 @@ $('#btnUndo').onclick=()=>histGo(-1);
 $('#btnRedo').onclick=()=>histGo(1);
 (function boot(){
   const saved=loadSession();
-  if(!saved)return;
+  if(saved===null){if(recoveryRaw!==null)recoveryNotice();return;}
   try{
     restoreSession(saved);
     const mins=Math.round((Date.now()-(saved.at||Date.now()))/60000);
@@ -7984,9 +8320,11 @@ $('#btnRedo').onclick=()=>histGo(1);
         +`<button class="linkish" id="ctxFresh">Start fresh</button>`,false,true);
       const bf=$('#ctxFresh');if(bf)bf.onclick=startFresh;
     },300);
-  }catch(e){clearSession();}
+  }catch(e){recoveryNotice();}
 })();
 renderPageTabs();renderAll();histPush();chromeSync();
+addEventListener('pagehide',flushSession);
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')flushSession();});
 addEventListener('resize',()=>{fit();packToolbar();markStripOverflow();closePops();});
 requestAnimationFrame(()=>{packToolbar();markStripOverflow();});
 if(window.ResizeObserver)new ResizeObserver(fit).observe(stageEl.parentElement);

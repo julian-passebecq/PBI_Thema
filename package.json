@@ -4,7 +4,11 @@
   "private": true,
   "description": "Standalone browser workbench for Power BI theme and dashboard design intent",
   "scripts": {
-    "test": "node test/smoke.js"
+    "test": "node test/contracts.js && node test/run-browser.js",
+    "test:contracts": "node test/contracts.js",
+    "test:browser": "node test/run-browser.js",
+    "test:reliability": "node test/reliability.js",
+    "test:repairs": "node test/repairs.js"
   },
   "devDependencies": {
     "playwright": "^1.55.0"

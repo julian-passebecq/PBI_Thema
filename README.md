@@ -72,17 +72,31 @@ See [`docs/AUDIT.md`](docs/AUDIT.md) for the standalone audit, responsive matrix
 
 ## Test it
 
-Node.js is required **only for the automated test tooling**:
+Node.js 22 is required **only for the automated test tooling**:
 
 ```bash
-npm install
+npm ci
 npx playwright install chromium
 npm test
 ```
 
 `test/smoke.js` launches the standalone file in Chromium and verifies the important migration boundary: contracts, JSON downloads, current spec validation, responsive behavior, rails/toolbars, edit mode, keyboard navigation and browser errors.
 
-GitHub Actions runs the same smoke audit on pushes and pull requests.
+`test/regression.js` also checks malformed imports, preservation of named theme presets in downloaded JSON, immediate JSON-editor blur, retained invalid drafts, undo/redo timing, open-panel responsive layout, and saving on reload. `npm test` runs pure contract fixtures, then smoke, regression and Sprint 001 integration suites against both `file://` and an automatically managed loopback HTTP server. No application server or build step is needed by users.
+
+Theme imports use standard JSON. Named style definitions, including collisions with built-in presets, are retained when exporting; their preview may be approximate. Other settings are converted into the workbench's supported controls. Before supplied settings change or disappear (including palette truncation to eight colors), a path report requires **Import supported settings**. Cancel leaves the accepted document unchanged. These are local shape checks, not Microsoft-schema validation or a Power BI compatibility certification.
+
+Dock drafts apply after a short pause or blur; full-editor drafts use Apply. Ctrl/Cmd+Enter applies either editor immediately, subject to conversion review. Invalid/pending drafts remain in their editor across panel/view changes. If another operation accepts a newer document, an old draft requires explicit **Reapply draft**. Ctrl/Cmd+Z inside text fields uses native text undo. Drafts are not persisted across browser restarts.
+
+Imports share spec versions 1–3 (missing legacy version migrates), typed structural checks, deterministic missing IDs and rejection of duplicate IDs or future versions. Safe incomplete bindings and unknown visual kinds remain editable with diagnostics. Limits are 4 MiB UTF-8 per document, 40 pages, 400 visuals, 4,000 model fields and nesting depth 64. Credential-looking properties are removed from spec/model input with value-free diagnostics; unknown extension properties remain inert data.
+
+Undo/redo includes theme, spec and model. Autosave covers accepted state, reports storage failures and flushes on page hide/leave. Invalid or unsupported saved data is retained while autosave is paused: **Save original data** downloads the exact original; **Replace with current document** intentionally resumes saving. Browser storage remains best effort.
+
+Targeted checks: `npm run test:contracts`, `npm run test:reliability`, `npm run test:repairs` (local file by default), and `npm run test:browser` (both transports). Individual browser suites honor `THEME_FORGE_URL`. The mandatory gate includes repair regressions T17–T20 for inert formatting strings, hidden-page/bookmark recovery, and actual control edits reaching history/autosave without forced test flushes. Repair-candidate artifacts are under ignored `test-artifacts/sprint-001-dev-02/`; the prior candidate and independent test artifacts remain historical. `THEME_FORGE_ARTIFACT_DIR` can relocate the original integration suite's screenshots/results. The loopback server closes on completion or failure; test failures exit nonzero.
+
+Formatting-rule string thresholds remain literal text when edited. Invalid retained formatting values remain in exported intent with diagnostics and are not used as preview CSS. Hiding a page preserves the existing page-name storage representation; an empty bookmark display name is incomplete content with a warning, while its stable ID remains required. Cross-filter text, filters, bookmarks and formatting changes notify normal autosave and undo history directly.
+
+GitHub Actions is configured to run the same gate with Node 22 and `npm ci` on pushes and pull requests. A local pass does not establish a remote CI result.
 
 ## Repository layout
 
@@ -107,4 +121,4 @@ GitHub Actions runs the same smoke audit on pushes and pull requests.
 
 Theme Forge intentionally does **not** authenticate to Power BI/Fabric, call their REST APIs, write PBIR, or store credentials. It produces design-intent JSON and theme JSON. PbiBench is the intended downstream materializer.
 
-The current single-file distribution is useful for portability. If the codebase grows substantially, the next architecture step should be to split source into native ES modules while keeping the deployed output static; a React rewrite is not required just to make this maintainable or deployable.
+The current single-file distribution preserves direct local-file launch. The approved later packaging direction is focused development modules plus a generated self-contained HTML artifact; it does not assume that browser ES modules work over `file://`. See `projectmanagement/ARCHITECTURE.md` for the architecture decisions and sprint boundaries.

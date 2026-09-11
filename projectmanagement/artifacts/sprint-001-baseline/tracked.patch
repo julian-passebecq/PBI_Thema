@@ -1,0 +1,365 @@
+diff --git a/README.md b/README.md
+index 0253228..5320d61 100644
+--- a/README.md
++++ b/README.md
+@@ -82,6 +82,12 @@ npm test
+ 
+ `test/smoke.js` launches the standalone file in Chromium and verifies the important migration boundary: contracts, JSON downloads, current spec validation, responsive behavior, rails/toolbars, edit mode, keyboard navigation and browser errors.
+ 
++`test/regression.js` also checks malformed imports, preservation of named theme presets in downloaded JSON, immediate JSON-editor blur, retained invalid drafts, undo/redo timing, open-panel responsive layout, and saving on reload. Both suites run with `npm test`.
++
++Theme imports use standard JSON. Named style definitions are retained when exporting; other theme settings are read into the workbench's supported controls. JSON drafts are validated when leaving the editor, and invalid drafts remain available for correction. Autosave reports storage failures and flushes pending session changes when the page is hidden or left.
++
++Unfinished JSON drafts are kept separately when switching between theme and spec in the tool panel (for the current page session). Ctrl/Cmd+Enter applies the active draft immediately; Ctrl/Cmd+Z inside text fields uses native text undo. Saved-session recovery and spec comparison reject malformed structure before replacing current state.
++
+ GitHub Actions runs the same smoke audit on pushes and pull requests.
+ 
+ ## Repository layout
+diff --git a/package.json b/package.json
+index 8a148aa..19829d0 100644
+--- a/package.json
++++ b/package.json
+@@ -4,7 +4,7 @@
+   "private": true,
+   "description": "Standalone browser workbench for Power BI theme and dashboard design intent",
+   "scripts": {
+-    "test": "node test/smoke.js"
++    "test": "node test/smoke.js && node test/regression.js"
+   },
+   "devDependencies": {
+     "playwright": "^1.55.0"
+diff --git a/theme-forge.html b/theme-forge.html
+index 6f833ff..55dc40b 100644
+--- a/theme-forge.html
++++ b/theme-forge.html
+@@ -639,7 +639,12 @@ select,input[type=text]{background:var(--panel-2);border:1px solid var(--line);b
+   .lrail{order:-1}
+   .rbtn[aria-pressed="true"]::after,.rbtn[aria-selected="true"]::after{
+        top:auto;bottom:-4px;left:7px;right:7px;width:auto;height:3px}
+-  .dock{height:auto;max-height:none}
++  .dock{height:auto;max-height:none;min-width:0}
++  .dockhead{flex-wrap:wrap;height:auto;min-height:34px;padding:6px;gap:6px;min-width:0}
++  .dockhead #findCtl{width:120px;min-width:0;flex:1 1 100px}
++  .dockhead .grow{display:none}
++  .dockhead #dockClose{margin-left:auto;flex-shrink:0}
++  .dockhead .dsub,.dockhead .dcrumb{max-width:100%}
+   .dockbody .pane[data-pane="design"][data-open="1"],
+   .dockbody #bindPanel,.dockbody #objPanel{grid-template-columns:1fr}
+   .bank{border-right:0;border-top:1px solid var(--line)}
+@@ -658,6 +663,7 @@ select,input[type=text]{background:var(--panel-2);border:1px solid var(--line);b
+     </div>
+     <button class="chip" id="btnCopy" title="Copy theme.json to the clipboard">Copy theme</button>
+     <button class="chip solid" id="btnDownload">Download theme.json</button>
++    <span id="saveStatus" role="status" hidden title="Download your theme and spec to keep your changes.">Autosave unavailable</span>
+   </header>
+ 
+   <div class="toolbar" id="toolbar" role="toolbar" aria-label="Canvas commands" data-pack="0">
+@@ -1475,6 +1481,17 @@ function themePresets(s){
+ /* every preset name a spec can resolve against right now */
+ const knownPresets=()=>[...new Set([...THEME_PRESET_NAMES,...((S&&S.presets)||[])])];
+ function buildThemeJson(s){
++  const theme=buildGeneratedThemeJson(s);
++  // Named styles imported from Power BI are complete definitions, not just labels.
++  for(const [kind,styles] of Object.entries(s.importedPresets||{})){
++    const target=Object.hasOwn(theme.visualStyles,kind)?theme.visualStyles[kind]
++      :(Object.defineProperty(theme.visualStyles,kind,{value:{},enumerable:true,configurable:true,writable:true}),theme.visualStyles[kind]);
++    for(const [name,definition] of Object.entries(styles))
++      Object.defineProperty(target,name,{value:structuredClone(definition),enumerable:true,configurable:true,writable:true});
++  }
++  return theme;
++}
++function buildGeneratedThemeJson(s){
+   const font=s.font, semi=(font==='Segoe UI'?'Segoe UI Semibold':font);
+   const lbl=Math.max(8,s.sLabel), legendOn=s.legendMode==='top'||s.legendMode==='chips';
+   const gs=s.gridStyle==='dotted'?'dotted':(s.gridStyle==='dashed'?'dashed':'solid');
+@@ -1584,11 +1601,15 @@ function unwrap(v){
+ }
+ function parseThemeJson(txt){
+   const t=JSON.parse(txt), s=structuredClone(S), g=(v,f)=>hx(v)||f;
++  if(!t||typeof t!=='object'||Array.isArray(t))throw new Error('A theme must be a JSON object.');
+   s.srcSchema=schemaVerOf(t.$schema);
+   /* a theme may declare named style presets beside "*"; collect them so a spec can name one */
+   const pre=new Set();
+   Object.values(t.visualStyles||{}).forEach(v=>Object.keys(v||{}).forEach(k=>{if(k!=='*')pre.add(k);}));
+   s.presets=[...pre];
++  s.importedPresets=Object.fromEntries(Object.entries(t.visualStyles||{}).map(([kind,styles])=>[
++    kind,Object.fromEntries(Object.entries(styles||{}).filter(([name])=>name!=='*'))
++  ]).filter(([,styles])=>Object.keys(styles).length));
+   if(typeof t.name==='string')s.name=t.name;
+   if(Array.isArray(t.dataColors)){
+     const d=t.dataColors.map(hx).filter(Boolean);
+@@ -3540,6 +3561,41 @@ function validateFormatting(f,add,where,scope,kind){
+ 
+ /* ---- validation ---- */
+ function validateSpec(spec,quiet){
++  const fail=msg=>{const issues=[{level:'error',where:'spec',msg}];if(!quiet)specIssues=issues;return issues;};
++  if(!spec||typeof spec!=='object'||Array.isArray(spec))return fail('A dashboard spec must be a JSON object.');
++  if(!Array.isArray(spec.pages)||!spec.pages.length)return fail('A dashboard spec needs a non-empty pages[] array.');
++  if(spec.pages.length>40)return fail('This preview supports at most 40 pages.');
++  const objectLists=new Set(['pages','visuals','filters','bookmarks','overrides','conditional','rules']);
++  const objects=new Set(['formatting','bindings','position','canvas','report','action','captures']);
++  const checkShape=(node,path,depth=0)=>{
++    if(depth>64)return `${path} is nested too deeply.`;
++    if(!node||typeof node!=='object')return null;
++    for(const [key,value] of Object.entries(node)){
++      if(value==null)continue;
++      const at=`${path}.${key}`;
++      if(objectLists.has(key)){
++        if(!Array.isArray(value))return `${at} must be an array.`;
++        if(value.some(v=>!v||typeof v!=='object'||Array.isArray(v)))return `${at} must contain objects.`;
++      }
++      if(objects.has(key)&&(typeof value!=='object'||Array.isArray(value)))return `${at} must be an object.`;
++      const issue=checkShape(value,at,depth+1);if(issue)return issue;
++    }
++    return null;
++  };
++  const shape=checkShape(spec,'spec');if(shape)return fail(shape);
++  let count=0;
++  for(const [i,pg] of spec.pages.entries()){
++    if(!pg||typeof pg!=='object'||Array.isArray(pg))return fail(`pages[${i}] must be an object.`);
++    if(pg.visuals!=null&&!Array.isArray(pg.visuals))return fail(`pages[${i}].visuals must be an array.`);
++    for(const [k,v] of (pg.visuals||[]).entries())
++      if(!v||typeof v!=='object'||Array.isArray(v))return fail(`pages[${i}].visuals[${k}] must be an object.`);
++    count+=(pg.visuals||[]).length;
++  }
++  if(count>400)return fail('This preview supports at most 400 visuals.');
++  try{return validateSpecContent(spec,quiet);}
++  catch(e){return fail('Invalid nested spec structure: '+String(e.message||e).slice(0,120));}
++}
++function validateSpecContent(spec,quiet){
+   const out=[];
+   const add=(level,where,msg)=>out.push({level,where,msg});
+   if(!spec||typeof spec!=='object'){add('error','spec','not an object');return out;}
+@@ -4906,6 +4962,8 @@ function bindControls(){
+ 
+ /* ---------- JSON ---------- */
+ let jsonView='theme';
++const jsonDrafts={theme:null,spec:null};
++let cancelJsonPending=()=>{};
+ function renderJson(){
+   renderGaps();
+   noteHistory();saveSession();
+@@ -4921,6 +4979,8 @@ function renderJson(){
+   }
+ }
+ function setJsonView(v){
++  cancelJsonPending();
++  if(editingJson)jsonDrafts[jsonView]=$('#jsonarea').value;
+   jsonView=v;editingJson=false;
+   $('#jsTheme').setAttribute('aria-pressed',v==='theme');
+   $('#jsSpec').setAttribute('aria-pressed',v==='spec');
+@@ -4930,24 +4990,42 @@ function setJsonView(v){
+     :`Edits apply live. Paste any Power&nbsp;BI theme file to read it back into the controls — older schema versions are read too. Exports declare <b>reportThemeSchema-${SCHEMA_VER}</b>${S.srcSchema&&S.srcSchema!==SCHEMA_VER?`; the file you loaded declared ${esc(S.srcSchema)}.`:'.'}`;
+   $('#gaps').style.display=v==='spec'?'none':'';
+   renderJson();
++  if(jsonDrafts[v]!=null){
++    $('#jsonarea').value=jsonDrafts[v];editingJson=true;
++    setJsonState(false,'draft — not applied');
++  }
++  $('#jsonHint').append(document.createTextNode(' Ctrl/Cmd+Enter applies your draft immediately.'));
+ }
+ function setJsonState(ok,msg){const p=$('#jsonState');p.textContent=msg;p.className='pill '+(ok?'good':'bad');}
+ function bindJson(){
+   const ta=$('#jsonarea');let t=null;
++  cancelJsonPending=()=>{clearTimeout(t);t=null;};
+   $('#jsTheme').onclick=()=>setJsonView('theme');
+   $('#jsSpec').onclick=()=>setJsonView('spec');
+-  ta.addEventListener('input',()=>{editingJson=true;clearTimeout(t);
+-    t=setTimeout(()=>{
++  const commit=()=>{
++      clearTimeout(t);t=null;
+       if(jsonView==='spec'){
+         const r=applySpecText(ta.value);
++        jsonDrafts.spec=r.ok?null:ta.value;
+         setJsonState(r.ok,r.ok?'applied':(/^JSON error/.test(r.msg)?'JSON error':r.msg.slice(0,40)));
+-        return;
++        return r.ok;
+       }
+       const r2=applyThemeText(ta.value);
++      jsonDrafts.theme=r2.ok?null:ta.value;
+       setJsonState(r2.ok,r2.ok?'applied':'JSON error');
+-    },320);});
+-  ta.addEventListener('blur',()=>{editingJson=false;renderJson();});
+-  $('#btnRevert').onclick=()=>{editingJson=false;renderJson();};
++      return r2.ok;
++  };
++  ta.addEventListener('input',()=>{editingJson=true;clearTimeout(t);t=setTimeout(commit,320);});
++  ta.addEventListener('keydown',e=>{
++    if((e.ctrlKey||e.metaKey)&&e.key==='Enter'){
++      e.preventDefault();e.stopPropagation();commit();
++    }
++  });
++  ta.addEventListener('blur',()=>{
++    if(!editingJson)return;
++    if(commit()){editingJson=false;renderJson();}
++  });
++  $('#btnRevert').onclick=()=>{cancelJsonPending();jsonDrafts[jsonView]=null;editingJson=false;renderJson();};
+ }
+ 
+ 
+@@ -4958,6 +5036,7 @@ function bindJson(){
+    ================================================================== */
+ let jeDirty={spec:false,theme:false}, jeBusy=false;
+ function applySpecText(txt){
++  if(new Blob([txt]).size>4*1024*1024)return{ok:false,msg:'Spec exceeds the 4 MB preview limit.'};
+   let j;
+   try{j=JSON.parse(txt);}catch(e){return{ok:false,msg:'JSON error - '+String(e.message||e).slice(0,120)};}
+   if(!j||typeof j!=='object')return{ok:false,msg:'A dashboard spec must be a JSON object.'};
+@@ -4978,7 +5057,7 @@ function applySpecText(txt){
+ }
+ function applyThemeText(txt){
+   try{
+-    S=parseThemeJson(String(txt).replace(/\/\*[\s\S]*?\*\//g,'').trim());
++    S=parseThemeJson(String(txt).trim());
+     jeBusy=true;
+     try{syncControls();markBank();renderMain();}finally{jeBusy=false;}
+     return{ok:true,msg:`applied — ${esc(S.name)}${S.srcSchema&&S.srcSchema!==SCHEMA_VER?`, read from schema ${esc(S.srcSchema)}`:''}`};
+@@ -6282,8 +6361,9 @@ function nudge(dx,dy){
+ function bindKeys(){
+   addEventListener('keydown',e=>{
+     const mod=e.metaKey||e.ctrlKey;
+-    if(mod&&(e.key==='z'||e.key==='Z')){e.preventDefault();histGo(e.shiftKey?1:-1);return;}
+-    if(mod&&(e.key==='y'||e.key==='Y')){e.preventDefault();histGo(1);return;}
++    // Text fields keep native undo/redo; report history is for the canvas.
++    if(mod&&!typing(document.activeElement)&&(e.key==='z'||e.key==='Z')){e.preventDefault();histGo(e.shiftKey?1:-1);return;}
++    if(mod&&!typing(document.activeElement)&&(e.key==='y'||e.key==='Y')){e.preventDefault();histGo(1);return;}
+     /* workspace shortcuts — Alt, so nothing collides with the browser's own */
+     if(e.altKey&&!mod){
+       if(e.key==='1'||e.key==='2'||e.key==='3'){e.preventDefault();setLevel(e.key);return;}
+@@ -6333,19 +6413,19 @@ function validateModel(m){
+   if(!Array.isArray(m.tables)||!m.tables.length)return ['no tables[] — there is nothing to bind to'];
+   m.tables.forEach((t,i)=>{
+     if(!t||!t.name){out.push(`tables[${i}] has no name`);return;}
+-    if(t.columns&&!Array.isArray(t.columns))out.push(`${t.name}.columns is not an array`);
+-    if(t.measures&&!Array.isArray(t.measures))out.push(`${t.name}.measures is not an array`);
++    if(t.columns&&!Array.isArray(t.columns)){out.push(`${t.name}.columns is not an array`);return;}
++    if(t.measures&&!Array.isArray(t.measures)){out.push(`${t.name}.measures is not an array`);return;}
+     (t.columns||[]).forEach((c,j)=>{if(!c||!c.name)out.push(`${t.name}.columns[${j}] has no name`);});
+     (t.measures||[]).forEach((c,j)=>{if(!c||!c.name)out.push(`${t.name}.measures[${j}] has no name`);});
+   });
+   if(m.relationships&&!Array.isArray(m.relationships))out.push('relationships is not an array');
+-  const n=m.tables.reduce((a,t)=>a+((t.columns||[]).length+(t.measures||[]).length),0);
++  const n=m.tables.reduce((a,t)=>a+(Array.isArray(t?.columns)?t.columns.length:0)+(Array.isArray(t?.measures)?t.measures.length:0),0);
+   if(!n)out.push('the model has tables but no columns or measures');
+   return out;
+ }
+ function loadModel(j,name){
+   const bad=validateModel(j);
+-  if(bad.length&&(!j||!Array.isArray(j.tables)||!j.tables.length)){ctxSay(`Rejected ${name}: ${bad[0]}`,true);return;}
++  if(bad.length){ctxSay(`Rejected ${name}: ${bad[0]}`,true);return;}
+   const hits=[];const clean=scrub(j,hits,0);
+   const rows=(clean.tables||[]).reduce((a,t)=>a+((t.columns||[]).length+(t.measures||[]).length),0);
+   if(rows>4000){ctxSay(`Rejected ${name}: ${rows} fields is beyond what this preview handles.`,true);return;}
+@@ -6361,6 +6441,8 @@ function loadModel(j,name){
+ function loadSpec(j,name){
+   if(!j||typeof j!=='object'||Array.isArray(j)){ctxSay(`Rejected ${name}: not a JSON object`,true);return;}
+   if(!Array.isArray(j.pages)||!j.pages.length){ctxSay(`Rejected ${name}: no pages[]`,true);return;}
++  const structural=validateSpec(j,true).find(i=>i.level==='error'&&i.where==='spec');
++  if(structural){ctxSay(`Rejected ${name}: ${structural.msg}`,true);return;}
+   const hits=[];const clean=scrub(j,hits,0);
+   const nvis=clean.pages.reduce((a,p)=>a+((p.visuals||[]).length),0);
+   if(clean.pages.length>40||nvis>400){ctxSay(`Rejected ${name}: ${clean.pages.length} pages / ${nvis} visuals is beyond this preview.`,true);return;}
+@@ -6591,6 +6673,8 @@ function noteHistory(){
+   _histT=setTimeout(histPush,420);
+ }
+ function histGo(d){
++  // Record the current user edit before moving through history, even within the debounce.
++  clearTimeout(_histT);histPush();
+   const n=HPOS+d;
+   if(n<0||n>=HIST.length)return;
+   clearTimeout(_histT);
+@@ -6603,8 +6687,7 @@ function histGo(d){
+   if(cfgPage>=PAGES.length)cfgPage=0;
+   if(page>=PAGES.length)page=0;
+   renderAll();
+-  /* hold past the debounce window so the restored state is not re-pushed */
+-  setTimeout(()=>{restoring=false;renderHistButtons();},650);
++  clearTimeout(_histT);restoring=false;
+   renderHistButtons();
+   ctxSay(`${d<0?'Undo':'Redo'} — step ${HPOS+1} of ${HIST.length}.`);
+ }
+@@ -6624,15 +6707,18 @@ const LS_KEY='theme-forge.session.v2';
+ let _saveT=null;
+ function saveSession(){
+   clearTimeout(_saveT);
+-  _saveT=setTimeout(()=>{
++  _saveT=setTimeout(flushSession,700);
++}
++function flushSession(){
++  clearTimeout(_saveT);_saveT=null;
+     try{
+       localStorage.setItem(LS_KEY,JSON.stringify({
+         v:APPVER,at:Date.now(),
+         theme:S,spec:SPEC,
+         model:(MODEL&&MODEL!==SAMPLE_MODEL)?MODEL:null,
+         page,cfgPage,mode}));
+-    }catch(e){/* private window, quota, or blocked site data — carry on */}
+-  },700);
++      $('#saveStatus').hidden=true;
++    }catch(e){$('#saveStatus').hidden=false;ctxSay('Autosave unavailable. Download your theme and spec to keep your changes.',true);}
+ }
+ function loadSession(){
+   let raw=null;
+@@ -6646,13 +6732,25 @@ function loadSession(){
+ }
+ function clearSession(){try{localStorage.removeItem(LS_KEY);}catch(e){}}
+ function restoreSession(j){
+-  S=normalise({...resolve(0,0),...j.theme});
+-  SPEC=migrateSpec(j.spec).spec;
+-  if(j.model&&Array.isArray(j.model.tables))MODEL=j.model;
+-  validateSpec(SPEC);rebuildPages();
++  if(!j||validateSpec(j.spec,true).some(i=>i.level==='error'&&i.where==='spec'))
++    throw new Error('Saved report structure is invalid.');
++  if(j.model&&validateModel(j.model).length)throw new Error('Saved model is invalid.');
++  if(!j.theme||typeof j.theme!=='object'||Array.isArray(j.theme)
++    ||!Array.isArray(j.theme.data)||!j.theme.data.length||j.theme.data.some(c=>!hx(c)))
++    throw new Error('Saved theme is invalid.');
++  const nextTheme=normalise({...resolve(0,0),...structuredClone(j.theme)});
++  const nextSpec=migrateSpec(structuredClone(j.spec)).spec;
++  const previous={theme:S,spec:SPEC,model:MODEL};
++  try{
++    S=nextTheme;SPEC=nextSpec;MODEL=j.model?structuredClone(j.model):SAMPLE_MODEL;
++    validateSpec(SPEC);rebuildPages();
++  }catch(e){
++    S=previous.theme;SPEC=previous.spec;MODEL=previous.model;
++    validateSpec(SPEC);rebuildPages();throw e;
++  }
+   pageOf={report:0,library:firstOf('library')};
+-  page=Math.min(j.page||0,PAGES.length-1);
+-  cfgPage=Math.min(j.cfgPage||0,PAGES.length-1);
++  const index=n=>Number.isFinite(n)?clamp(Math.floor(n),0,PAGES.length-1):0;
++  page=index(j.page);cfgPage=index(j.cfgPage);
+   return true;
+ }
+ 
+@@ -7030,6 +7128,8 @@ function diffText(){
+ }
+ function compareSpec(j,name){
+   if(!j||!Array.isArray(j.pages)){ctxSay(`Rejected ${name}: no pages[] to compare`,true);return;}
++  const structural=validateSpec(j,true).find(i=>i.level==='error'&&i.where==='spec');
++  if(structural){ctxSay(`Rejected ${name}: ${structural.msg}`,true);return;}
+   const base=migrateSpec(JSON.parse(JSON.stringify(j))).spec;
+   DIFF=diffSpec(base,JSON.parse(JSON.stringify(SPEC)),name);
+   renderIssues();
+@@ -7173,9 +7273,10 @@ function bindContextIO(){
+     drop.addEventListener('drop',async e=>{
+       e.preventDefault();
+       const f=e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files[0];if(!f)return;
++      if(f.size>4*1024*1024){ctxSay('File exceeds the 4 MB preview limit.',true);return;}
+       let j;try{j=JSON.parse(await f.text());}catch(err){ctxSay(`Could not read ${f.name} — not valid JSON`,true);return;}
+-      if(Array.isArray(j.tables))loadModel(j,f.name);
+-      else if(Array.isArray(j.pages))loadSpec(j,f.name);
++      if(Array.isArray(j?.tables))loadModel(j,f.name);
++      else if(Array.isArray(j?.pages))loadSpec(j,f.name);
+       else ctxSay(`${f.name} is neither a model context (tables[]) nor a dashboard spec (pages[]).`,true);
+     });
+   }
+@@ -7987,6 +8088,8 @@ $('#btnRedo').onclick=()=>histGo(1);
+   }catch(e){clearSession();}
+ })();
+ renderPageTabs();renderAll();histPush();chromeSync();
++addEventListener('pagehide',flushSession);
++document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')flushSession();});
+ addEventListener('resize',()=>{fit();packToolbar();markStripOverflow();closePops();});
+ requestAnimationFrame(()=>{packToolbar();markStripOverflow();});
+ if(window.ResizeObserver)new ResizeObserver(fit).observe(stageEl.parentElement);

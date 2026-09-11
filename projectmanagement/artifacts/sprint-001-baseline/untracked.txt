@@ -1,0 +1,16 @@
+.gitignore
+AGENTS.md
+docs/AUDIT_2026-09-08.md
+projectmanagement/ARCHITECTURE.md
+projectmanagement/BACKLOG.md
+projectmanagement/PROMPTS.md
+projectmanagement/README.md
+projectmanagement/STATUS.md
+projectmanagement/TEST-STRATEGY.md
+projectmanagement/WORKFLOW.md
+projectmanagement/artifacts/sprint-001-baseline/status.txt
+projectmanagement/artifacts/sprint-001-baseline/tracked.patch
+projectmanagement/reviews/2026-09-08-baseline.md
+projectmanagement/sprints/SPRINT-001.md
+projectmanagement/templates/REPORTS.md
+test/regression.js

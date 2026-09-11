@@ -1,0 +1,8 @@
+ M README.md
+ M package.json
+ M theme-forge.html
+?? .gitignore
+?? AGENTS.md
+?? docs/AUDIT_2026-09-08.md
+?? projectmanagement/
+?? test/regression.js

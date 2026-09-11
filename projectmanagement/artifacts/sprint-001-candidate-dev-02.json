@@ -1,0 +1,124 @@
+{
+  "id": "sprint-001-dev-02",
+  "date": "2026-09-08",
+  "branch": "codex/sprint-001-document-reliability",
+  "head": "7d6fbbdc1a35b508d7229688e77c46ea281b5703",
+  "state": "READY_FOR_TEST; dirty candidate includes preserved baseline",
+  "parent": "sprint-001-dev-01",
+  "parentManifest": "projectmanagement/artifacts/sprint-001-candidate.json",
+  "scope": "All tracked/untracked non-projectmanagement files; project records remain editable.",
+  "gitStatus": [
+    " M .github/workflows/test.yml",
+    " M README.md",
+    " M package.json",
+    " M theme-forge.html",
+    "?? .gitignore",
+    "?? AGENTS.md",
+    "?? docs/AUDIT_2026-09-08.md",
+    "?? package-lock.json",
+    "?? projectmanagement/",
+    "?? test/contracts.js",
+    "?? test/fixtures/",
+    "?? test/regression.js",
+    "?? test/reliability.js",
+    "?? test/repairs.js",
+    "?? test/run-browser.js"
+  ],
+  "changedSinceParent": [
+    "package.json",
+    "README.md",
+    "test/contracts.js",
+    "test/reliability.js",
+    "test/repairs.js",
+    "test/run-browser.js",
+    "theme-forge.html"
+  ],
+  "files": [
+    {
+      "path": ".github/workflows/test.yml",
+      "sha256": "6b07a874c944244ae2b5f890701ca194360f071a2a1b1ff564b63daf8fa10597"
+    },
+    {
+      "path": ".gitignore",
+      "sha256": "79f31b1707e19d223658ccf5da9bb6f711d354c2199c393cc2506dc672555a9b"
+    },
+    {
+      "path": "AGENTS.md",
+      "sha256": "5a3df8f563a50f71bcaa2fcc7120e60ba0fe9b6f50cdeeb93e59891b0d93fde3"
+    },
+    {
+      "path": "docs/AUDIT_2026-09-08.md",
+      "sha256": "9095cf25e951b21257dc37afe74b6509eb69a84fc9183ad9dd0c7ac0df61d878"
+    },
+    {
+      "path": "docs/AUDIT.md",
+      "sha256": "7b6e00e19dcd9100174f7d1d336539f14e8215d57a6845752d14d6ff16aa4723"
+    },
+    {
+      "path": "index.html",
+      "sha256": "3ff84102a1d0209c40786b7758ad5a4aa9c86989f6c078c52b7ece54bee4516f"
+    },
+    {
+      "path": "netlify.toml",
+      "sha256": "afc1675347271531fee1e6adee8b319855d19cfbfbf1aa52495cab31ace6444f"
+    },
+    {
+      "path": "package-lock.json",
+      "sha256": "ab364f73789777ee226a04b0713db0354df3fd0c88d06f4a90c781e0339f2ac8"
+    },
+    {
+      "path": "package.json",
+      "sha256": "49e47809da1a1fdef9ba84b3f951c14d85c4475f5b5b8b89f589852437888bd0"
+    },
+    {
+      "path": "README.md",
+      "sha256": "3434dd1480f23385d57a20984bbb9780611715637a7757d315b767ed180dca4f"
+    },
+    {
+      "path": "scripts/standalone_patch.py",
+      "sha256": "6ec2f940f083441351434c90e206014473092cd5b43c63b2eaa606587bb1ecb3"
+    },
+    {
+      "path": "test/contracts.js",
+      "sha256": "525698808778a512cbd071ff57fb770b0ba69f74d32ffc7afe57c3f1631eb30b"
+    },
+    {
+      "path": "test/fixtures/reliability.js",
+      "sha256": "a7c0fc0e1569f4bffd6bef247d48fbeda946b804d27af22b7577d051e6552183"
+    },
+    {
+      "path": "test/regression.js",
+      "sha256": "fc4c91e35961598736ad272c2ab9f98d4806f0d94a51f50ab37283c9e3a5b77f"
+    },
+    {
+      "path": "test/reliability.js",
+      "sha256": "a62772a4835a9479d01b78fa4d58ff88ca4a4e54767d48834cbef3c3d447f733"
+    },
+    {
+      "path": "test/repairs.js",
+      "sha256": "f00c8d08ff2dae4f0fcb82995bdb5643f8306c78860f1d01f9b4a3e0ec128aca"
+    },
+    {
+      "path": "test/run-browser.js",
+      "sha256": "fc20162a8507af2006c5d2f15d4d2c4e0a226da57c15a60d03aa048a7d4ed16a"
+    },
+    {
+      "path": "test/smoke.js",
+      "sha256": "6d9e738548861f01a599f34d6346331133bcb9f8791862b05adce051307ecc1a"
+    },
+    {
+      "path": "theme-forge.html",
+      "sha256": "60a9b56440b1b82f586ed49dfa084f8fca3dc79815375c36e22949f0a05b9491"
+    }
+  ],
+  "verification": {
+    "node": "22.23.2",
+    "npm": "10.5.0",
+    "playwright": "1.63.0",
+    "cleanInstall": "npm exec --yes --package=node@22 -- npm ci (exit 0)",
+    "gate": "npm exec --yes --package=node@22 -- npm test (exit 0)",
+    "log": "test-artifacts/sprint-001-dev-02/npm-test-final.log",
+    "installLog": "test-artifacts/sprint-001-dev-02/npm-ci.log",
+    "coverage": "Pure contracts; smoke, regression, reliability and 13 repair scenarios on file and HTTP Chromium"
+  }
+}
