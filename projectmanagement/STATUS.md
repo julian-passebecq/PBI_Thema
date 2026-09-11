@@ -1,5 +1,7 @@
 # Current status
 
+2026-09-11 handover override: the user stopped the multi-model workflow and requested GitHub preservation for one Pro model. Start at [handover/README.md](handover/README.md). Branch: `codex/pro-ai-handover-2026-09-11`; source snapshot `d6706bfb8980a27fb329e067793596e33fc29cf9` preserves dev-02 (all 19 hashes matched). Next actor: Pro model. Next action: final S001 logic review, then decide remaining product scope. No acceptance or product change occurred during handover. The dated records below describe the earlier dirty-tree workflow; old no-push statements are historical. See the handover delivery receipt for publication status.
+
 Last updated: 2026-09-08 by independent tester.
 Active sprint: [SPRINT-001](sprints/SPRINT-001.md).
 State: READY_FOR_LEAD.

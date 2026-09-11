@@ -1,0 +1,21 @@
+# Remaining outcomes for a complete app
+
+This is an outcome list, not a coding recipe. Existing architecture describes prior decisions; the Pro model should decide how to achieve these outcomes and propose any necessary boundary changes. S002–S005 were planned, not implemented/accepted as complete sprints.
+
+| Priority / scope | What still needs to be true | Evidence needed to call it complete |
+| --- | --- | --- |
+| Immediate — S001 acceptance | Repaired rendering, document application, recovery and all accepted-change notifications satisfy intended invariants, including inherited code paths. Resolve any actual remaining defect found during review. | Final code-logic decision on dev-02; targeted new evidence only where needed. Existing test passes are reusable evidence. |
+| Known deferred issue — AUT-006 | Bookmark “Capture what is hidden now” actually performs its intended action consistently with undo, save and export. | Actual UI outcome. Current report is a source-only observation of a rendered `bmFromHidden` button without a handler; no independent reproduction or fix yet. |
+| Export fidelity — EXP-001 | Unedited imported theme properties, unknown properties, named presets and every palette color survive round trip. Editing a control changes only intended properties. | Semantic import/export round trips, edited and unedited cases. Current supported-settings conversion is explicit but still potentially lossy; disclosure is not lossless preservation. |
+| Export correctness — EXP-002/003 | Exported theme files meet a pinned official schema; spec diagnostics describe the exact exported state and extension/loss policy is clear. | Schema provenance/version and representative fixtures; parsed actual exports. Fresh diagnostics have partial S001 work, not complete S002 acceptance. |
+| Real compatibility — EXP-004 | Representative exports are accepted by Power BI Desktop with accurately stated limitations. | Exact export, Desktop version and actual result. Not tested here; access to Desktop/test operator is required. |
+| Maintainability/delivery — ARC-001, OPS-001 | Source is maintainable without divergent implementations; portable output remains reliable; deployed assets contain only intended runtime files. | Behavior parity, distribution freshness, local/static launch and hosting checks. Current Netlify config publishes repository root, including management material if that configuration is deployed. |
+| Full authoring — AUT-001–005 | Page/visual creation, duplication/deletion, references, layout interactions, type changes, metadata refresh/bindings, filters, bookmarks, sync/actions and formatting work together through undo, reload and export. | Representative complete report journeys, not only isolated helper tests. Much UI exists already; coverage and dependability are unfinished. |
+| Accessibility and scale — UX-001, PERF-001, QA-003 | Keyboard/focus/alt-text workflows and layouts are usable; supported document sizes have measured performance; browser support claims have evidence. | Keyboard journeys, widths/zoom, fixed workload results and appropriate browser-engine checks. Firefox/WebKit were not tested. |
+| Downstream integration — INT-001 | Theme Forge design intent and PbiBench agree on supported contracts/capabilities and produce a real downstream result. | Partner source/fixtures and an actual versioned round trip. A separate PbiBench Codex project exists, but this repo has no verified integration result. |
+
+No currently reproduced new S001 product defect was reported by round 2. That does not mean the app is complete or bug-free. F-01–F-10 have scoped implementations/test evidence pending final acceptance; avoid restarting their repairs based only on old status text.
+
+Optional later ideas: provider AI assistant and multi-workspace/sync (FUT-001/002). They are not prerequisites for the agreed foundation. No backend, Fabric authentication, model-query engine, PBIR writer, new visual types or UI rewrite was approved by the reliability sprint.
+
+External gaps are evidence/access gaps, not reasons to invent results: Microsoft-schema validation, Desktop import, PbiBench round trip and broader engines remain unestablished. Final release/production deployment is a separate decision; the user authorized preservation/push for this handover.

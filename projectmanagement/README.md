@@ -1,5 +1,7 @@
 # Theme Forge project management
 
+2026-09-11: **Pro model takeover starts at [handover/README.md](handover/README.md)**. The user requested a concise handover instead of continuing the multi-model workflow. Prior role/pass instructions below remain historical context; do not restart an agent loop.
+
 The goal is a dependable Power BI design workbench: users can design a report, understand what the preview represents, and export useful theme and design-intent files without losing their work.
 
 This folder is the durable coordination system for the lead, development, and test models. It is grounded in the repository reviewed on 2026-09-08. It does not assume access to a separate PbiBench repository or to Power BI Desktop.
